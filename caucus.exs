@@ -35,6 +35,31 @@ defmodule Candidate do
   end
 end
 
+defmodule AbstractRegistry do
+  defstruct [:values, :type]
+
+  # initialize a new AbstractRegistry
+  def create(type) do
+    IO.puts "We exist with type #{inspect type}!"
+    spawn fn -> loop(type, MapSet.new(), MapSet.new()) end
+  end
+
+  def loop(type, values, subscribers) do
+    IO.puts "Looping with module #{inspect type}!"
+    receive do
+      {:subscribe, pid} -> 
+        IO.puts "We have a new subscriber! #{inspect pid} for #{inspect type}!"
+        send pid, %AbstractRegistry{values: values, type: type}
+        loop(type, values, MapSet.put(subscribers, pid))
+      %^type{} = new_val ->
+        IO.puts "New value: #{inspect new_val} for #{inspect type}!"
+        new_values = MapSet.put(values, new_val)
+        Enum.each(subscribers, fn s -> send s, %AbstractRegistry{values: values, type: type} end)
+        loop(type, new_values, subscribers)
+    end
+  end
+end
+
 # The warehouse of all Candidates: a PubSub actor
 defmodule CandidateRegistry do
   defstruct [:candidates]
@@ -80,7 +105,7 @@ defmodule Voter do
   # Name [Setof Candidate] ([Setof Candidate] -> [Setof Candidate]) -> void
   defp loop(name, candidates, voting_fun) do
     receive do
-      %CandidateRegistry{candidates: new_candidates} -> 
+      %AbstractRegistry{values: new_candidates, type: Candidate} -> 
         IO.puts "Voter #{name} has received candidates! #{inspect new_candidates}"
         loop(name, new_candidates, voting_fun)
       {:vote_request, eligible_candidates, vote_leader} ->
@@ -139,10 +164,10 @@ defmodule VoteLeader do
       vote_loop(voters, candidates, Enum.reduce(candidates, %{}, fn cand, acc -> Map.put(acc, cand.name, cand) end), %{})
     else
       receive do
-        %VoterRegistry{voters: new_voters} ->
+        %AbstractRegistry{values: new_voters, type: Voter} ->
           IO.puts "Vote leader received voters! #{inspect new_voters}"
           setup_voting(new_voters, candidates)
-        %CandidateRegistry{candidates: new_candidates} ->
+        %AbstractRegistry{values: new_candidates, type: Candidate} ->
           IO.puts "Vote Leader received candidates! #{inspect new_candidates}"
           setup_voting(voters, new_candidates)
       end
@@ -181,8 +206,7 @@ end
 defmodule StupidSort do
   def generate(cand_name) do
     fn candidates ->
-      candidate? = Enum.find(candidates, fn(%Candidate{name: n, tax_rate: tr}) -> n == cand_name end)
-
+      candidate? = Enum.find(candidates, fn(%Candidate{name: n, tax_rate: tr}) -> n == cand_name end) 
       if candidate? do
         [candidate? | Enum.reject(candidates, fn(%Candidate{name: n, tax_rate: _}) -> n == cand_name end)]
       else
@@ -207,13 +231,15 @@ defmodule MockSubscriber do
   end
 end
 
-cand_registry = CandidateRegistry.spawn
+# cand_registry = CandidateRegistry.spawn
+cand_registry = AbstractRegistry.create(Candidate)
 
 Candidate.spawn("Bernie", 50, cand_registry)
 Candidate.spawn("Biden", 25, cand_registry)
 Candidate.spawn("Tulsi", 10, cand_registry)
 
-voter_registry = VoterRegistry.spawn
+# voter_registry = VoterRegistry.spawn
+voter_registry = AbstractRegistry.create(Voter)
 
 Voter.spawn("ABC", voter_registry, cand_registry, StupidSort.generate("Tulsi"))
 Voter.spawn("DEF", voter_registry, cand_registry, StupidSort.generate("Tulsi"))
