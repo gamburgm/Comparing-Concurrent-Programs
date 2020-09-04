@@ -36,6 +36,9 @@
 ;; a Winner is a (winner Name)
 (assertion-struct winner (name))
 
+;; a Voter-Roll is a (voter-roll Region [Setof Name])
+(assertion-struct voter-roll (region voters))
+
 ;; There are four actor roles:
 ;; - Caucus Leaders
 ;; - Candidates

@@ -106,12 +106,23 @@
 
   (voter-skeleton voting-procedure name region #t))
 
+(define (spawn-fraudulent-voter name registered-region voting-region rank-candidates)
+  (define (voting-procedure id region round-candidates candidates)
+    (assert (vote name id voting-region (ranked-vote (candidates) round-candidates rank-candidates))))
+
+  (voter-skeleton voting-procedure name registered-region #t))
+
 ;; Region -> Leader
 (define (spawn-leader region)
   (spawn
     (printf "The Vote Leader for region ~a has joined the event!\n" region)
+    (field [voters-in-region (set)])
+
     (define/query-set voters (voter $name region) name)
     (define/query-set candidates (candidate $name _) name)
+
+    (on (asserted (voter-roll region $voters))
+        (voters-in-region voters))
 
     ;; [Listof Name] -> Elected
     (define (run-round current-cands current-voters)
@@ -144,7 +155,8 @@
             (when (set-member? (valid-voters) who)
               (cond
                 [(or (hash-has-key? (voter-to-candidate) who) 
-                     (not (set-member? current-cands for))) 
+                     (not (set-member? current-cands for))
+                     (not (set-member? (voters-in-region) who)))
                  (invalidate-voter who)]
                 [else 
                   (printf "Voter ~a has voted for candidate ~a in ~a in region ~a!\n" who for round-id region)
@@ -200,6 +212,16 @@
             (printf "The race has begun in region ~a!\n" region)
             (stop-current-facet (run-round (candidates) (voters))))))))
 
+(define (spawn-region-registry)
+  (spawn
+    (field [voters-per-region (hash)])
+
+    (on (asserted (voter $name $region))
+        (voters-per-region (hash-update (voters-per-region) region (λ (region-roll) (set-add region-roll name)) (set))))
+
+    (during (observe (voter-roll $region _))
+            (assert (voter-roll region (hash-ref (voters-per-region) region (set)))))))
+
 ;; Name -> [[Listof Candidate] -> [Listof Candidate]]
 (define (stupid-sort cand-name)
   (λ (candidates)
@@ -212,6 +234,8 @@
 (define (spawn-manager regions)
   (spawn
     (field [caucus-results (hash)])
+
+    (spawn-region-registry)
     (on-start (for ([region regions]) (spawn-leader region)))
 
     (on (asserted (elected $name $region))
@@ -238,3 +262,4 @@
 ;; no leader makes multiple elected announcements
 
 ;; Candidates do actually drop per caucus. Nice.
+
