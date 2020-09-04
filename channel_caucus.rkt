@@ -144,8 +144,7 @@
 
 ;; Make a voter that sleeps through their vote (doesn't vote)
 (define (make-sleepy-voter name region voter-registry candidate-registry)
-  (define (sleepy-voting x y z)
-    (log-caucus-evt "Sleepy voter ~a has slept through their vote!" name))
+  (define (sleepy-voting x y z) (log-caucus-evt "Sleepy voter ~a has slept through their vote!" name))
 
 (voter-skeleton name region sleepy-voting voter-registry candidate-registry))
 
