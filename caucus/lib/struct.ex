@@ -32,6 +32,10 @@ defmodule VoterData do
   defstruct [:voters, :lookup, :votes]
 end
 
+defmodule SlipUp do
+  defstruct [:leaked_leader]
+end
+
 # A Candidate registered for election in the Caucus
 defmodule CandStruct do
   defstruct [:name, :tax_rate, :pid]
