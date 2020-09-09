@@ -148,6 +148,43 @@
 
 (voter-skeleton name region sleepy-voting voter-registry candidate-registry))
 
+(define (make-fraudulent-voter name registered-region voting-region rank-candidates voter-registry candidate-registry accomplice-registry)
+  (define voting-region-leader-chan #f)
+
+  (define (fraudulent-voting existing-candidates available-candidates leader-chan)
+    (unless voting-region-leader-chan
+      (begin
+        (set! voting-region-leader-chan (channel-get accomplice-registry))))
+    (define priorities (rank-candidates (set->list existing-candidates)))
+    (define voting-for
+      (for/first ([candidate (in-list priorities)]
+                  #:when (member (candidate-name candidate) available-candidates))
+                (candidate-name candidate)))
+
+    (log-caucus-evt "Fraudulent Voter ~a has submitted a vote for candidate ~a!" name voting-for)
+    (announce-vote voting-region-leader-chan (vote name voting-for)))
+
+  (voter-skeleton name registered-region fraudulent-voting voter-registry candidate-registry))
+
+(define (make-accomplice-voter name region rank-candidates voter-registry candidate-registry)
+  (define sent-channel #f)
+  (define rendezvous-chan (make-channel))
+
+  (define (accomplice-voting existing-candidates available-candidates leader-chan)
+    (unless sent-channel (begin (thread (thunk (channel-put rendezvous-chan leader-chan))) (set! sent-channel #t)))
+    (define priorities (rank-candidates (set->list existing-candidates)))
+    (define voting-for
+      (for/first ([candidate (in-list priorities)]
+                  #:when (member (candidate-name candidate) available-candidates))
+                (candidate-name candidate)))
+
+    (log-caucus-evt "Accomplice Voter ~a has submitted a vote for candidate ~a!" name voting-for)
+    (announce-vote leader-chan (vote name voting-for)))
+
+
+  (voter-skeleton name region accomplice-voting voter-registry candidate-registry)
+  rendezvous-chan)
+
 ;; Submit a vote to the vote leader
 ;; NOTE this is put in another thread to prevent deadlocks in voters
 ;; Chan Vote -> thread
@@ -185,9 +222,22 @@
   (define retrieve-candidates-chan (make-channel))
   (define retrieve-voters-chan (make-channel))
   (define voting-chan (make-channel))
+      
+  (sleep 1) ;; to make sure all other actors get situated first
+
+  ;; Determine the next set of eligible voters
+  ;; (Setof Name) -> (Setof Voter)
+  (define (receive-voters voter-blacklist)
+    (channel-put voter-registry (message retrieve-voters-chan))
+    (define voter-payload (channel-get retrieve-voters-chan))
+    (match voter-payload
+      [(payload new-voters)
+        (list->set (filter-voters (set->list new-voters) voter-blacklist))]))
+
+  (define voters-in-region (receive-voters (set)))
+
   (thread
     (thunk
-      (sleep 1) ;; to make sure all other actors get situated first
       (log-caucus-evt "The Vote Leader in region ~a is ready to run the caucus!" region)
 
       ;; Start a sequence of votes to determine an elected candidate
@@ -201,15 +251,6 @@
           (match cand-payload
             [(payload new-candidates)
             (list->set (filter-candidates (set->list new-candidates) candidate-blacklist))]))
-
-        ;; Determine the next set of eligible voters
-        ;; (Setof Name) -> (Setof Voter)
-        (define (receive-voters voter-blacklist)
-          (channel-put voter-registry (message retrieve-voters-chan))
-          (define voter-payload (channel-get retrieve-voters-chan))
-          (match voter-payload
-            [(payload new-voters)
-             (list->set (filter-voters (set->list new-voters) voter-blacklist))]))
 
         ;; Issue ballots to all eligible voters and return each voter's voting channel
         ;; (Setof Voter) (Setof Candidate) -> (Hashof Name -> Chan)
@@ -277,8 +318,9 @@
 
           (define (try-cast-vote name candidate voter-blacklist voting-record)
             (cond
-              [(set-member? voter-blacklist name)
-               (log-caucus-evt "Invalid voter ~a has tried to vote in region ~a!" name region)
+              [(or (set-member? voter-blacklist name)
+                   (not (hash-has-key? voter-lookup name)))
+               (log-caucus-evt "Invalid voter ~a has tried to vote in region ~a!" name)
                (values voter-blacklist voting-record)]
               [(hash-has-key? voting-record name)
                (log-caucus-evt "Voter ~a has already voted! ~a is no longer a valid voter!" name name)
@@ -286,7 +328,7 @@
               [(andmap (λ (cand) (not (string=? candidate (candidate-name cand)))) (set->list candidates))
                (log-caucus-evt "Voter ~a voted for candidate ~a, who isn't currently an eligible candidate in region ~a!" name candidate region)
                (values (set-add voter-blacklist name) voting-record)]
-              [else
+              [else 
                 (log-caucus-evt "Voter ~a in region ~a has successfully voted for candidate ~a!" name region candidate)
                 (values voter-blacklist (hash-set voting-record name candidate))]))
 
@@ -326,9 +368,11 @@
                           [else
                             (values (set-add voter-blacklist voter-name) (hash-remove voting-record voter-name))])])))
                  (count-votes new-blacklist new-voting-record))))))
-        
+
+    
       (define winner (run-caucus (set) (set)))
       (log-caucus-evt "We have a winner ~a in region ~a!" (candidate-name winner) region)
+      (printf "We have a winner ~a in region ~a!\n" (candidate-name winner) region)
       (channel-put results-chan (declare-winner (candidate-name winner))))))
 
 ;; remove declaration behavior
@@ -352,6 +396,8 @@
            (define num-winners (for/sum ([num-of-votes (in-hash-values new-results)]) num-of-votes))
            (cond
              [(= num-winners (length regions))
+              (printf "Number of winners: ~a. Number of regions: ~a\n" num-winners (length regions))
+              (printf "and the final region tally is: ~a\n" new-results)
               (define most-votes (cdr (argmax (λ (pair) (cdr pair)) (hash->list new-results))))
               (define front-runners (filter (λ (pair) (= most-votes (cdr pair))) (hash->list new-results)))
               (define front-runner-names (map (λ (cand) (car cand)) front-runners))

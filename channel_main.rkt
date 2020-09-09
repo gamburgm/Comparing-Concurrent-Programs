@@ -25,6 +25,10 @@
 (make-voter "012" "Region1" (stupid-sort "Biden") voter-registration-1 candidate-roll)
 (make-voter "123" "Region1" (stupid-sort "Biden") voter-registration-1 candidate-roll)
 (make-voter "234" "Region1" (stupid-sort "Biden") voter-registration-1 candidate-roll)
+(make-voter "org" "Region1" (stupid-sort "Vermin Supreme") voter-registration-1 candidate-roll)
+
+(define accomplice-chan (make-accomplice-voter "0000b" "Region1" (stupid-sort "Tulsi") voter-registration-1 candidate-roll))
+
 (make-greedy-voter "ABC" "Region1" (stupid-sort "Bernie" "Tulsi") voter-registration-1 candidate-roll)
 (make-greedy-voter "DEF" "Region1" (stupid-sort "Bernie" "Tulsi") voter-registration-1 candidate-roll)
 (make-greedy-voter "GHI" "Region1" (stupid-sort "Bernie" "Tulsi") voter-registration-1 candidate-roll)
@@ -54,6 +58,9 @@
 
 ;;;; Region 2 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-values (voter-registration-2 voter-roll-2) (make-abstract-registry))
+
+(make-fraudulent-voter "0000a" "Region2" "Region1" (stupid-sort "Steerpike") voter-registration-2 candidate-roll accomplice-chan)
+
 (make-voter "999" "Region2" (stupid-sort "Steerpike") voter-registration-2 candidate-roll)
 (make-voter "998" "Region2" (stupid-sort "Steerpike") voter-registration-2 candidate-roll)
 (make-voter "997" "Region2" (stupid-sort "Steerpike") voter-registration-2 candidate-roll)
@@ -74,6 +81,7 @@
 
 ;;;; Region 3 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-values (voter-registration-3 voter-roll-3) (make-abstract-registry))
+
 (make-voter "999" "Region3" (stupid-sort "Steerpike") voter-registration-3 candidate-roll)
 (make-voter "998" "Region3" (stupid-sort "Steerpike") voter-registration-3 candidate-roll)
 (make-voter "997" "Region3" (stupid-sort "Steerpike") voter-registration-3 candidate-roll)
@@ -91,7 +99,6 @@
 (make-voter "985" "Region3" (stupid-sort "Donkey") voter-registration-3 candidate-roll)
 (make-voter "984" "Region3" (stupid-sort "Donkey") voter-registration-3 candidate-roll)
 (make-voter "983" "Region3" (stupid-sort "Donkey") voter-registration-3 candidate-roll)
-
 
 (make-region-manager (list "Region1" "Region2" "Region3") candidate-roll (list voter-roll-1 voter-roll-2 voter-roll-3) main-channel)
 
