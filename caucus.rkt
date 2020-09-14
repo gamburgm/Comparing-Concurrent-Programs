@@ -112,6 +112,14 @@
 
   (voter-skeleton voting-procedure name registered-region #t))
 
+(define (spawn-region-changing-voter name first-region second-region rank-candidates)
+  (spawn
+    (define a-bit-from-now (+ (current-inexact-milliseconds) 100))
+    (assert (voter name first-region))
+
+    (on (asserted (later-than a-bit-from-now))
+        (stop-current-facet (spawn-voter name second-region rank-candidates)))))
+
 ;; Region -> Leader
 (define (spawn-leader region)
   (spawn
@@ -212,15 +220,25 @@
             (printf "The race has begun in region ~a!\n" region)
             (stop-current-facet (run-round (candidates) (voters))))))))
 
-(define (spawn-region-registry)
+(define (spawn-voter-registry)
   (spawn
-    (field [voters-per-region (hash)])
+    (define/query-hash voter-reg-status (voter $name $region) name region)
+    (define one-second-from-now (+ 1000 (current-inexact-milliseconds)))
 
-    (on (asserted (voter $name $region))
-        (voters-per-region (hash-update (voters-per-region) region (λ (region-roll) (set-add region-roll name)) (set))))
+    (on (asserted (later-than one-second-from-now))
 
-    (during (observe (voter-roll $region _))
-            (assert (voter-roll region (hash-ref (voters-per-region) region (set)))))))
+        (define (aggregate-registration-info reg-info)
+          (for/fold ([voters-per-region (hash)])
+                    ([(voter region) (in-hash reg-info)])
+            (hash-update voters-per-region region (λ (voters) (set-add voters voter)) (set))))
+
+        (react
+          (printf "voter registry spawned\n")
+          (field [voters-per-region (aggregate-registration-info (voter-reg-status))])
+          (assert (registration-close))
+          (during (observe (voter-roll $region _))
+                  (printf "Interest in voter roll for region ~a: ~a\n" region (voters-per-region))
+                  (assert (voter-roll region (hash-ref (voters-per-region) region (set)))))))))
 
 ;; Name -> [[Listof Candidate] -> [Listof Candidate]]
 (define (stupid-sort cand-name)
@@ -235,8 +253,12 @@
   (spawn
     (field [caucus-results (hash)])
 
-    (spawn-region-registry)
-    (on-start (for ([region regions]) (spawn-leader region)))
+    (spawn-voter-registry)
+
+    (on (asserted (registration-close))
+        (for ([region regions]) (spawn-leader region)))
+
+;;     (on-start (for ([region regions]) (spawn-leader region)))
 
     (on (asserted (elected $name $region))
         (caucus-results (hash-update (caucus-results) name add1 0))
@@ -254,7 +276,6 @@
             (react 
               (printf "The winner of the election is ~a!\n" winning-candidate)
               (assert (outbound (winner winning-candidate)))))))))
-
 
 ;; Assumptions made about the manager:
 ;; Every elected announcement is valid

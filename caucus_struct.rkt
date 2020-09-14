@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide voter vote round candidate candidate-name tally elected winner)
+(provide voter vote round candidate candidate-name tally elected winner voter-roll registration-close)
 
 ;; a Name is a (caucus-unique) String
 
@@ -38,6 +38,9 @@
 
 ;; a Voter-Roll is a (voter-roll Region [Setof Name])
 (assertion-struct voter-roll (region voters))
+
+;; a RegistrationClose is a (registration-close)
+(assertion-struct registration-close ())
 
 ;; There are four actor roles:
 ;; - Caucus Leaders
