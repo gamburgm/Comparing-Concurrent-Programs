@@ -29,14 +29,22 @@ end
 # a VoterData is a %VoterData{voters: [Setof VoterStruct], lookup: [Mapof Name -> VoterStruct], votes: [Mapof Name -> Name]}
 # VoterData represents the status of Voters during a Vote
 defmodule VoterData do
-  defstruct [:voters, :lookup, :votes]
-end
-
-defmodule SlipUp do
-  defstruct [:leaked_leader]
+  defstruct [:voters, :region_voters, :lookup, :votes]
 end
 
 # A Candidate registered for election in the Caucus
 defmodule CandStruct do
   defstruct [:name, :tax_rate, :pid]
+end
+
+defmodule Register do
+  defstruct [:name, :region]
+end
+
+defmodule ChangeReg do
+  defstruct [:name, :region]
+end
+
+defmodule VoterRoll do
+  defstruct [:pid, :region]
 end

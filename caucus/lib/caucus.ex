@@ -47,6 +47,48 @@ defmodule StubbornCandidate do
   end
 end
 
+defmodule VoterRegistry do
+  defstruct [:voters]
+
+  def create(manager_pid) do
+    spawn fn -> start_registration(manager_pid) end
+  end
+
+  def start_registration(manager_pid) do
+    Process.send_after self(), :timeout, 1000
+    manage_registrants(%{}, manager_pid)
+  end
+
+  def manage_registrants(reg_info, manager_pid) do
+    receive do
+      :timeout ->
+        send manager_pid, {:reg_complete, self()}
+        send_reg_info(Enum.reduce(reg_info, %{}, fn {voter, region}, acc -> Map.update(acc, region, MapSet.new([voter]), fn voters -> MapSet.put(voters, voter) end) end))
+      %Register{name: name, region: region} ->
+        if !Map.has_key?(reg_info, name) do
+          manage_registrants(Map.put(reg_info, name, region), manager_pid)
+        else
+          manage_registrants(reg_info, manager_pid)
+        end
+      %ChangeReg{name: name, region: region} ->
+        if Map.has_key?(reg_info, name) do
+          manage_registrants(Map.replace!(reg_info, name, region), manager_pid)
+        else
+          manage_registrants(reg_info, manager_pid)
+        end
+    end
+  end
+
+  # is it going to blow up if it receives something else? FIXME
+  def send_reg_info(voters_per_region) do
+    receive do
+      %VoterRoll{pid: pid, region: region} ->
+        send pid, %VoterRegistry{voters: Map.get(voters_per_region, region, MapSet.new())}
+    end
+    send_reg_info(voters_per_region)
+  end
+end
+
 # A pub/sub server for data of some struct
 defmodule AbstractRegistry do
   defstruct [:values, :type]
@@ -93,7 +135,7 @@ defmodule AbstractRegistry do
 end
 
 # Create and associate a Registry for VoterStructs with a Region
-defmodule VoterRegistry do
+defmodule VoterParticipationRegistry do
   def create(region) do
     Process.register(AbstractRegistry.create(VoterStruct), region)
   end
@@ -108,10 +150,11 @@ end
 defmodule Voter do
   # Initialize a new voter
   # Name Region PID PID ([Setof Candidate] -> [Setof Candidate]) VotingStrategy -> PID
-  def spawn(name, region, cand_registry, prioritize_cands, voting_strategy) do
+  def spawn(name, region, cand_registry, voter_registry, prioritize_cands, voting_strategy) do
     spawn fn ->
-      voter_registry = Process.whereis region
-      send voter_registry, {:publish, self(), %VoterStruct{name: name, pid: self()}}
+      participation_registry = Process.whereis region
+      send participation_registry, {:publish, self(), %VoterStruct{name: name, pid: self()}}
+      send voter_registry, %Register{name: name, region: region}
       send cand_registry, {:subscribe, self()}
       loop(name, MapSet.new(), prioritize_cands, voting_strategy)
     end
@@ -131,33 +174,33 @@ defmodule Voter do
   end
 end
 
-defmodule FraudulentVoter do
-  # Initialize a new voter
-  # Name Region PID PID ([Setof Candidate] -> [Setof Candidate]) VotingStrategy -> PID
-  def spawn(name, region, cand_registry, prioritize_cands, voting_strategy) do
-    spawn fn ->
-      voter_registry = Process.whereis region
-      send voter_registry, {:publish, self(), %VoterStruct{name: name, pid: self()}}
-      send cand_registry, {:subscribe, self()}
-      loop(name, MapSet.new(), prioritize_cands, voting_strategy, false)
-    end
-  end
+# defmodule FraudulentVoter do
+#   # Initialize a new voter
+#   # Name Region PID PID ([Setof Candidate] -> [Setof Candidate]) VotingStrategy -> PID
+#   def spawn(name, region, cand_registry, prioritize_cands, voting_strategy) do
+#     spawn fn ->
+#       voter_registry = Process.whereis region
+#       send voter_registry, {:publish, self(), %VoterStruct{name: name, pid: self()}}
+#       send cand_registry, {:subscribe, self()}
+#       loop(name, MapSet.new(), prioritize_cands, voting_strategy, false)
+#     end
+#   end
 
-  # Respond to messages sent to a voter
-  # Name [Setof Candidate] ([Enumerable Candidate] -> [Listof Candidate]) -> void
-  defp loop(name, candidates, prioritize_cands, voting_strategy, voting_region) do
-    receive do
-      %SlipUp{leaked_leader: leader_pid} -> 
-        loop(name, candidates, prioritize_cands, voting_strategy, leader_pid)
-      %AbstractRegistry{values: new_candidates, type: CandStruct} ->
-        IO.puts "Voter #{name} has received candidates! #{inspect new_candidates}"
-        loop(name, new_candidates, prioritize_cands, voting_strategy, voting_region)
-      {:ballot, eligible_candidates, _vote_leader} ->
-        voting_strategy.vote(name, candidates, eligible_candidates, voting_region, prioritize_cands)
-        loop(name, candidates, prioritize_cands, voting_strategy, voting_region)
-    end
-  end
-end
+#   # Respond to messages sent to a voter
+#   # Name [Setof Candidate] ([Enumerable Candidate] -> [Listof Candidate]) -> void
+#   defp loop(name, candidates, prioritize_cands, voting_strategy, voting_region) do
+#     receive do
+#       %SlipUp{leaked_leader: leader_pid} -> 
+#         loop(name, candidates, prioritize_cands, voting_strategy, leader_pid)
+#       %AbstractRegistry{values: new_candidates, type: CandStruct} ->
+#         IO.puts "Voter #{name} has received candidates! #{inspect new_candidates}"
+#         loop(name, new_candidates, prioritize_cands, voting_strategy, voting_region)
+#       {:ballot, eligible_candidates, _vote_leader} ->
+#         voting_strategy.vote(name, candidates, eligible_candidates, voting_region, prioritize_cands)
+#         loop(name, candidates, prioritize_cands, voting_strategy, voting_region)
+#     end
+#   end
+# end
 
 # A Voter that participates in the Caucus
 defmodule RegularVoting do
@@ -212,11 +255,12 @@ end
 defmodule VoteLeader do
   defstruct [:pid]
   # initialize the VoteLeader
-  # Region PID PID -> PID
-  def spawn(region, candidate_registry, region_manager) do
+  # Region PID PID PID -> PID
+  def spawn(region, candidate_registry, voter_registry, region_manager) do
     spawn fn -> 
       Process.sleep(1000)
       send Process.whereis(region), {:msg, self()}
+      send voter_registry, %VoterRoll{pid: self(), region: region}
       setup_voting(MapSet.new(), MapSet.new(), MapSet.new(), candidate_registry, region_manager)
     end
   end
@@ -231,7 +275,7 @@ defmodule VoteLeader do
   # Gather the information necessary to start voting and issue votes to voters
   # [Setof Voter] [Setof Candidate] PID -> void
   defp prepare_voting(voters, region_voters, candidates, blacklist, candidate_registry, region_manager) do
-    if !(Enum.empty?(voters) || Enum.empty?(candidates)) do
+    if !(Enum.empty?(voters) || Enum.empty?(candidates) || Enum.empty?(region_voters)) do
       valid_candidates = MapSet.difference(candidates, blacklist)
       issue_votes(voters, valid_candidates)
       voter_lookup = Enum.reduce(voters, %{}, fn voter, acc -> Map.put(acc, voter.name, voter) end)
@@ -251,10 +295,13 @@ defmodule VoteLeader do
       receive do
         %AbstractRegistry{values: new_voters, type: VoterStruct} ->
           IO.puts "Vote leader received voters! #{inspect new_voters}"
-          prepare_voting(new_voters, new_voters, candidates, blacklist, candidate_registry, region_manager)
+          prepare_voting(new_voters, region_voters, candidates, blacklist, candidate_registry, region_manager)
         %AbstractRegistry{values: new_candidates, type: CandStruct} ->
           IO.puts "Vote Leader received candidates! #{inspect new_candidates}"
           prepare_voting(voters, region_voters, new_candidates, blacklist, candidate_registry, region_manager)
+        %VoterRegistry{voters: new_region_voters} ->
+          IO.puts "Vote leader received voters registered in their region! #{inspect new_region_voters}"
+          prepare_voting(voters, new_region_voters, candidates, blacklist, candidate_registry, region_manager)
       end
     end
   end
@@ -278,7 +325,7 @@ defmodule VoteLeader do
         {:vote, voter_name, cand_name} -> 
           cond do
             # CASE 1: Already eliminated Voter or Voter in wrong region
-            !Map.has_key?(voter_data.lookup, voter_name) || !Enum.any?(voter_data.region_voters, fn voter -> voter.name == voter_name end) ->
+            !Map.has_key?(voter_data.lookup, voter_name) || !Enum.any?(voter_data.region_voters, fn voter -> voter == voter_name end) ->
               vote_loop(voter_data, cand_data, cand_registry, region_manager)
             # CASE 2: Stubborn Voter || CASE 3: Greedy Voter
             !Map.has_key?(cand_data.lookup, cand_name) || Map.has_key?(voter_data.votes, voter_name) ->
@@ -346,8 +393,11 @@ defmodule RegionManager do
   end
 
   def initialize_regions(regions, candidate_registry) do
-    for region <- regions do
-      VoteLeader.spawn(region, candidate_registry, self())
+    receive do
+      {:reg_complete, voter_registry} ->
+        for region <- regions do
+          VoteLeader.spawn(region, candidate_registry, voter_registry, self())
+        end
     end
   end
 
