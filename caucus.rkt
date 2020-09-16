@@ -227,6 +227,8 @@
 
     (on (asserted (later-than one-second-from-now))
 
+        ;; Transform a hash from voter -> region to a hash from region -> Setof voter
+        ;; Hash -> Hash
         (define (aggregate-registration-info reg-info)
           (for/fold ([voters-per-region (hash)])
                     ([(voter region) (in-hash reg-info)])

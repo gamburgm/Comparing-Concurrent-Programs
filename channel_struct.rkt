@@ -92,18 +92,20 @@
 ;; 1. Candidates        
 ;; 2. Candidate Registry
 ;; 3. Voters            
-;; 4. Voter Registry    
+;; 4. Voter/Participation Registry    
 ;; 5. Vote Leader       
 ;; 6. Region Manager
+;; 7. Voter Registry
 ;; 
 
 ;;;; CONVERSATIONS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Publish Conversations
 ;; 1. Candidates publish their information to the Candidate Registry through a `candidate` struct sent to the Registry's channel
-;; 2. Voters publish their information to the Voter Registry through a `voter` struct sent to the Registry's channel
+;; 2. Voters publish their information to their region's Participation Registry through a `voter` struct sent to the Registry's channel
 ;; 3. Candidates can remove themselves from eligibility by sending a `drop-out` struct to the Candidate Registry
 ;;     -> This occurs when the candidate receives a number of votes below the candidate's threshold for staying in the race.
 ;; 4. Vote Leaders publish their information to the Region Manager through a `declare-leader` struct
+;; 5. Voters publish their preferred voting region to a Voter Registry by sending a  `register` message to register and a `change-reg` message to change registration.
 ;;
 ;; Subscribe Conversations
 ;; 1. Voters subscribe to the Candidate Registry to receive the most up-to-date list of available Candidates whenever a candidate registers.
@@ -120,4 +122,7 @@
 ;; 4. At the end of every round of voting, the ballot-results of votes is sent to every Candidate.
 ;; 5. When a candidate wins an election, the Vote Leader publishes that information to the Region Manager. When all caucuses have reported, the majority winner is elected.
 ;;
+;; Voter Registry Conversation
+;; 1. The Voter Registry signals to the Region Manager that voting begin after registration has finished.
+;; 2. The Vote Leaders query the Voter Registry for the list of all valid voters in their region.
 
