@@ -71,6 +71,23 @@
 ;; a Payload is a (payload [Setof Any])
 (struct payload (data) #:transparent)
 
+;;;;;; VOTER REGISTRY STRUCTS ;;;;;
+
+;; a Start is a (start)
+(struct start () #:transparent)
+
+;; a Register is a (register Name Region)
+(struct register (name region) #:transparent)
+
+;; a ChangeReg is a (change-reg Name Region)
+(struct change-reg (name region) #:transparent)
+
+;; a VoterRoll is a (voter-roll Chan Region)
+(struct voter-roll (recv-chan region) #:transparent)
+
+;; a ManagerComm is a (manager-comm Chan)
+(struct manager-comm (chan) #:transparent)
+
 ;;;; ENTITIES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 1. Candidates        
 ;; 2. Candidate Registry
@@ -103,3 +120,4 @@
 ;; 4. At the end of every round of voting, the ballot-results of votes is sent to every Candidate.
 ;; 5. When a candidate wins an election, the Vote Leader publishes that information to the Region Manager. When all caucuses have reported, the majority winner is elected.
 ;;
+

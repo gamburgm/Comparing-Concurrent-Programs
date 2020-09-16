@@ -27,8 +27,6 @@
 (make-voter "234" "Region1" (stupid-sort "Biden") voter-registration-1 candidate-roll)
 (make-voter "org" "Region1" (stupid-sort "Vermin Supreme") voter-registration-1 candidate-roll)
 
-(define accomplice-chan (make-accomplice-voter "0000b" "Region1" (stupid-sort "Tulsi") voter-registration-1 candidate-roll))
-
 (make-greedy-voter "ABC" "Region1" (stupid-sort "Bernie" "Tulsi") voter-registration-1 candidate-roll)
 (make-greedy-voter "DEF" "Region1" (stupid-sort "Bernie" "Tulsi") voter-registration-1 candidate-roll)
 (make-greedy-voter "GHI" "Region1" (stupid-sort "Bernie" "Tulsi") voter-registration-1 candidate-roll)
@@ -58,8 +56,6 @@
 
 ;;;; Region 2 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 (define-values (voter-registration-2 voter-roll-2) (make-abstract-registry))
-
-(make-fraudulent-voter "0000a" "Region2" "Region1" (stupid-sort "Steerpike") voter-registration-2 candidate-roll accomplice-chan)
 
 (make-voter "999" "Region2" (stupid-sort "Steerpike") voter-registration-2 candidate-roll)
 (make-voter "998" "Region2" (stupid-sort "Steerpike") voter-registration-2 candidate-roll)

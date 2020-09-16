@@ -103,7 +103,7 @@
     [(loser name) #f]))
 
 ;; Make a Voter thread
-(define (make-voter name region rank-candidates voter-registry candidate-registry)
+(define (make-voter name region rank-candidates participation-registry voter-registry candidate-registry)
   (define (normal-voting existing-candidates available-candidates leader-chan)
     (define priorities (rank-candidates (set->list existing-candidates)))
     (define voting-for
@@ -113,10 +113,10 @@
     (log-caucus-evt "Voter ~a has submitted a vote for candidate ~a!" name voting-for)
     (announce-vote leader-chan (vote name voting-for)))
 
-  (voter-skeleton name region normal-voting voter-registry candidate-registry))
+  (voter-skeleton name region normal-voting participation-registry voter-registry candidate-registry))
 
 ;; Make a voter thread that produces a greedy voter (who votes multiple times)
-(define (make-greedy-voter name region rank-candidates voter-registry candidate-registry)
+(define (make-greedy-voter name region rank-candidates participation-registry voter-registry candidate-registry)
   (define (greedy-voting existing-candidates available-candidates leader-chan)
     (define priorities (rank-candidates (set->list existing-candidates)))
     (define voting-for
@@ -132,23 +132,23 @@
     (announce-vote leader-chan (vote name voting-for))
     (announce-vote leader-chan (vote name (if second-vote second-vote voting-for))))
 
-  (voter-skeleton name region greedy-voting voter-registry candidate-registry))
+  (voter-skeleton name region greedy-voting participation-registry voter-registry candidate-registry))
 
 ;; Make a voter thread that always votes for the same candidate
-(define (make-stubborn-voter name region favorite-candidate voter-registry candidate-registry)
+(define (make-stubborn-voter name region favorite-candidate participation-registry voter-registry candidate-registry)
   (define (stubborn-voting existing-candidates available-candidates leader-chan)
     (log-caucus-evt "Stubborn voter ~a is voting for ~a again!" name favorite-candidate)
     (announce-vote leader-chan (vote name favorite-candidate)))
 
-  (voter-skeleton name region stubborn-voting voter-registry candidate-registry))
+  (voter-skeleton name region stubborn-voting participation-registry voter-registry candidate-registry))
 
 ;; Make a voter that sleeps through their vote (doesn't vote)
-(define (make-sleepy-voter name region voter-registry candidate-registry)
+(define (make-sleepy-voter name region participation-registry voter-registry candidate-registry)
   (define (sleepy-voting x y z) (log-caucus-evt "Sleepy voter ~a has slept through their vote!" name))
 
-(voter-skeleton name region sleepy-voting voter-registry candidate-registry))
+  (voter-skeleton name region sleepy-voting participation-registry voter-registry candidate-registry))
 
-(define (make-fraudulent-voter name registered-region voting-region rank-candidates voter-registry candidate-registry accomplice-registry)
+(define (make-fraudulent-voter name registered-region voting-region rank-candidates participation-registry voter-registry candidate-registry accomplice-registry)
   (define voting-region-leader-chan #f)
 
   (define (fraudulent-voting existing-candidates available-candidates leader-chan)
@@ -164,9 +164,9 @@
     (log-caucus-evt "Fraudulent Voter ~a has submitted a vote for candidate ~a!" name voting-for)
     (announce-vote voting-region-leader-chan (vote name voting-for)))
 
-  (voter-skeleton name registered-region fraudulent-voting voter-registry candidate-registry))
+  (voter-skeleton name registered-region fraudulent-voting participation-registry voter-registry candidate-registry))
 
-(define (make-accomplice-voter name region rank-candidates voter-registry candidate-registry)
+(define (make-accomplice-voter name region rank-candidates participation-registry voter-registry candidate-registry)
   (define sent-channel #f)
   (define rendezvous-chan (make-channel))
 
@@ -182,7 +182,7 @@
     (announce-vote leader-chan (vote name voting-for)))
 
 
-  (voter-skeleton name region accomplice-voting voter-registry candidate-registry)
+  (voter-skeleton name region accomplice-voting participation-registry voter-registry candidate-registry)
   rendezvous-chan)
 
 ;; Submit a vote to the vote leader
@@ -193,14 +193,15 @@
 
 ;; Create a voter thread
 ;; Name Region ((Listof Candidate) (Listof Candidate) Chan -> thread w/vote) Chan Chan -> voter thread
-(define (voter-skeleton name region voting-procedure voter-registry candidate-registry)
+(define (voter-skeleton name region voting-procedure voter-participation-registry voter-registry candidate-registry)
   (define receive-candidates-chan (make-channel))
   (define voting-chan (make-channel))
   (thread
     (thunk
       (log-caucus-evt "Voter ~a is registering!" name)
       (channel-put candidate-registry (subscribe receive-candidates-chan))
-      (channel-put voter-registry (publish (voter name region voting-chan)))
+      (channel-put voter-participation-registry (publish (voter name region voting-chan)))
+      (channel-put voter-registry (register name region))
       (let loop ([candidates (set)])
         (sync
           (handle-evt
@@ -216,9 +217,62 @@
                (voting-procedure candidates available-candidates leader-chan)
                (loop candidates)])))))))
 
+;; changes to make elsewhere:
+;; 1. voters need to receive the voter-registry channel and publish information to it
+;; 2. region manager needs to wait until receiving a completion message from the voter registry before initializing the vote leaders
+
+(define (make-voter-registry)
+  (define recv-manager-chan (make-channel))
+  (define registration-channel (make-channel))
+  (define voter-roll-channel (make-channel))
+
+  (define (receive-start-chan msg)
+    (match msg [(manager-comm chan) chan]))
+
+  (define (manage-registrants)
+    (define start-chan (receive-start-chan (channel-get recv-manager-chan)))
+
+    (define REGISTRATION-DEADLINE (+ (current-inexact-milliseconds) 1000))
+    (define registration-timeout (alarm-evt REGISTRATION-DEADLINE))
+    (let loop ([reg-info (hash)])
+      (sync
+        (handle-evt
+          registration-timeout
+          (λ (_) 
+             (define voters-per-region
+               (for/fold ([voters-per-region (hash)])
+                         ([(voter region) (in-hash reg-info)])
+                 (hash-update voters-per-region region (λ (voters) (set-add voters voter)) (set))))
+
+             (channel-put start-chan (start))
+             (send-registration-info voters-per-region)))
+
+        (handle-evt
+          registration-channel
+          (match-lambda
+            [(register name region)
+             (if (not (hash-has-key? reg-info name))
+               (loop (hash-set reg-info name region))
+               (loop reg-info))]
+            [(change-reg name region) 
+             (if (hash-has-key? reg-info name)
+               (loop (hash-set reg-info name region))
+               (loop reg-info))])))))
+
+  (define (send-registration-info voters-per-region)
+    (let loop ()
+      (define voter-roll-request (channel-get voter-roll-channel))
+      (match voter-roll-request
+        [(voter-roll recv-chan region)
+         (channel-put recv-chan (payload (hash-ref voters-per-region region (set))))
+         (loop)])))
+
+  (thread (thunk (manage-registrants)))
+  (values recv-manager-chan registration-channel voter-roll-channel))
+
 ;; Make the Vote Leader thread
 ;; Region Chan Chan Chan -> vote leader thread
-(define (make-vote-leader region candidate-registry voter-registry results-chan)
+(define (make-vote-leader region candidate-registry participation-registry voter-registry results-chan)
   (define retrieve-candidates-chan (make-channel))
   (define retrieve-voters-chan (make-channel))
   (define voting-chan (make-channel))
@@ -228,17 +282,23 @@
   ;; Determine the next set of eligible voters
   ;; (Setof Name) -> (Setof Voter)
   (define (receive-voters voter-blacklist)
-    (channel-put voter-registry (message retrieve-voters-chan))
+    (channel-put participation-registry (message retrieve-voters-chan))
     (define voter-payload (channel-get retrieve-voters-chan))
     (match voter-payload
       [(payload new-voters)
         (list->set (filter-voters (set->list new-voters) voter-blacklist))]))
 
-  (define voters-in-region (receive-voters (set)))
+  (define (receive-region-roll)
+    (channel-put voter-registry (voter-roll retrieve-voters-chan region))
+    (define voter-payload (channel-get retrieve-voters-chan))
+    (match voter-payload
+      [(payload new-voters) new-voters]))
 
   (thread
     (thunk
       (log-caucus-evt "The Vote Leader in region ~a is ready to run the caucus!" region)
+
+      (define voters-in-region (receive-region-roll))
 
       ;; Start a sequence of votes to determine an elected candidate
       ;; (Setof Name) (Setof Name) -> Candidate
@@ -381,13 +441,19 @@
 
 ;; Create a region-manager thread and channel
 ;; Chan -> winner announcement
-(define (make-region-manager regions candidate-registry voter-registries main-chan)
+(define (make-region-manager regions candidate-registry voter-registries voter-roll-chan main-chan recv-manager-chan)
+  (define start-chan (make-channel))
   (define results-chan (make-channel))
   (thread
     (thunk
-      (for ([region regions]
-            [registry voter-registries])
-        (make-vote-leader region candidate-registry registry results-chan))
+      (channel-put recv-manager-chan (manager-comm start-chan))
+      (define start-cue (channel-get start-chan))
+      (match start-cue
+        [(start)
+          (for ([region regions]
+                [registry voter-registries])
+            (make-vote-leader region candidate-registry registry voter-roll-chan results-chan))])
+
       (let loop ([caucus-results (hash)])
         (define region-winner (channel-get results-chan))
         (match region-winner
@@ -396,8 +462,6 @@
            (define num-winners (for/sum ([num-of-votes (in-hash-values new-results)]) num-of-votes))
            (cond
              [(= num-winners (length regions))
-              (printf "Number of winners: ~a. Number of regions: ~a\n" num-winners (length regions))
-              (printf "and the final region tally is: ~a\n" new-results)
               (define most-votes (cdr (argmax (λ (pair) (cdr pair)) (hash->list new-results))))
               (define front-runners (filter (λ (pair) (= most-votes (cdr pair))) (hash->list new-results)))
               (define front-runner-names (map (λ (cand) (car cand)) front-runners))
