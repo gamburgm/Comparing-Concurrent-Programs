@@ -63,12 +63,17 @@ defmodule VoterRegistry do
     receive do
       :timeout ->
         send manager_pid, {:reg_complete, self()}
-        send_reg_info(Enum.reduce(reg_info, %{}, fn {voter, region}, acc -> Map.update(acc, region, MapSet.new([voter]), fn voters -> MapSet.put(voters, voter) end) end))
+        voters_per_region = Enum.reduce(reg_info, %{}, fn {voter, region}, acc -> 
+          Map.update(acc, region, MapSet.new([voter]), fn voters -> MapSet.put(voters, voter) end)
+        end)
+
+        send_reg_info(voters_per_region)
       %Register{name: name, region: region} ->
-        if !Map.has_key?(reg_info, name) do
-          manage_registrants(Map.put(reg_info, name, region), manager_pid)
-        else
+        # FIXME swap the cases
+        if Map.has_key?(reg_info, name) do
           manage_registrants(reg_info, manager_pid)
+        else
+          manage_registrants(Map.put(reg_info, name, region), manager_pid)
         end
       %ChangeReg{name: name, region: region} ->
         if Map.has_key?(reg_info, name) do

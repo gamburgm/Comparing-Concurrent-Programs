@@ -14,6 +14,8 @@
 
 ;; a Region is a (caucus-unique) String
 
+;; a Time is a Number (number of milliseconds in Unix time)
+
 ;; a Voter is a (voter Name Region)
 (assertion-struct voter (name region))
 
@@ -36,11 +38,23 @@
 ;; a Winner is a (winner Name)
 (assertion-struct winner (name))
 
-;; a Voter-Roll is a (voter-roll Region [Setof Name])
+;; a VoterRoll is a (voter-roll Region [Setof Name])
 (assertion-struct voter-roll (region voters))
 
-;; a RegistrationClose is a (registration-close)
-(assertion-struct registration-close ())
+;; a Register is a (register Name Region)
+(assertion-struct register (name region))
+
+;; a ChangeRegistration is a (change-reg Name Reg)
+(assertion-struct change-reg (name region))
+
+;; a RegistrationDeadline is a (registration-deadline Time)
+(assertion-struct registration-deadline (deadline))
+
+;; a DoorsOpened is a (doors-opened Time)
+(assertion-struct doors-opened (time))
+
+;; a DoorsClose is a (doors-close Time)
+(assertion-struct doors-close (at))
 
 ;; There are four actor roles:
 ;; - Caucus Leaders
@@ -51,6 +65,14 @@
 ;; There are two presence-oriented conversations:
 ;; Voters announce their presence through a Voter assertion
 ;; Candidates announce their presence through a Candidate assertion
+
+;; There is a conversation about registration:
+;; The Region Manager initializes a Voter Registry to keep track of the 
+;; voter roll in each region. Registration opens in a time window prior
+;; to voting beginning, where voters may freely change which region they're
+;; registered in, enforcing that they are only registered in one location at a time
+;; (where they registered most recently). Upon completion of registration,
+;; the registry alerts the region manager that voting may proceed.
 
 ;; There is a conversation about voting:
 
@@ -74,3 +96,4 @@
 ;; - Stubborn Voter: A voter that always votes for the same candidate, even if that candidate isn't eligible.
 ;; - Late-Joining Voter: A voter who joins voting late (i.e. isn't available to vote for the first round).
 ;; - Unregistered Voter: A voter who votes without being registered to vote.
+

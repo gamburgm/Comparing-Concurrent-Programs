@@ -43,6 +43,8 @@
   (spawn
     (printf "Voter ~a is intending to register in region ~a!\n" name region)
     (define/query-set candidates (candidate $name $tr) (candidate name tr))
+    (assert (register name region))
+
     (when register? (assert (voter name region)))
 
     (during (round $id region $round-candidates)
@@ -121,13 +123,16 @@
         (stop-current-facet (spawn-voter name second-region rank-candidates)))))
 
 ;; Region -> Leader
-(define (spawn-leader region)
+(define (spawn-leader region participation-deadline)
   (spawn
     (printf "The Vote Leader for region ~a has joined the event!\n" region)
     (field [voters-in-region (set)])
 
     (define/query-set voters (voter $name region) name)
     (define/query-set candidates (candidate $name _) name)
+
+    (assert (doors-opened (current-inexact-milliseconds)))
+    (assert (doors-close participation-deadline))
 
     (on (asserted (voter-roll region $voters))
         (voters-in-region voters))
@@ -212,21 +217,37 @@
                 (stop-current-facet (run-round next-candidates (valid-voters)))])))))
 
 
-    (define one-second-from-now (+ 1000 (current-inexact-milliseconds)))
     (on-start
       (react
-        (on (asserted (later-than one-second-from-now))
+        (on (asserted (later-than participation-deadline))
             ;; ASSUME: at least one candidate and voter at this point
             (printf "The race has begun in region ~a!\n" region)
             (stop-current-facet (run-round (candidates) (voters))))))))
 
-(define (spawn-voter-registry)
+(define (spawn-voter-registry deadline valid-regions)
   (spawn
-    (define/query-hash voter-reg-status (voter $name $region) name region)
-    (define one-second-from-now (+ 1000 (current-inexact-milliseconds)))
+    (define region-lookup (list->set valid-regions))
+    (field [voter-reg-status (hash)])
 
-    (on (asserted (later-than one-second-from-now))
+    (assert (registration-deadline deadline))
 
+    (on (asserted (register $name $region))
+        ;; #:when (and (not (hash-has-key? (voter-reg-status) name))
+        ;;             (set-member? region-lookup region))
+        ;; #:when (<= (current-inexact-milliseconds) deadline)
+        (when (and (not (hash-has-key? (voter-reg-status) name))
+                   (set-member? region-lookup region))
+          (voter-reg-status (hash-set (voter-reg-status) name region))))
+
+
+    (on (asserted (change-reg $name $region))
+        ;; #:when (and (hash-has-key? (voter-reg-status) name)
+        ;;             (set-member? region-lookup region))
+        (when (and (hash-has-key? (voter-reg-status) name)
+                   (set-member? region-lookup region))
+          (voter-reg-status (hash-set (voter-reg-status) name region))))
+
+    (on (asserted (later-than deadline))
         ;; Transform a hash from voter -> region to a hash from region -> Setof voter
         ;; Hash -> Hash
         (define (aggregate-registration-info reg-info)
@@ -236,11 +257,11 @@
 
         (react
           (printf "voter registry spawned\n")
-          (field [voters-per-region (aggregate-registration-info (voter-reg-status))])
-          (assert (registration-close))
+          (define voters-per-region (aggregate-registration-info (voter-reg-status)))
+
           (during (observe (voter-roll $region _))
-                  (printf "Interest in voter roll for region ~a: ~a\n" region (voters-per-region))
-                  (assert (voter-roll region (hash-ref (voters-per-region) region (set)))))))))
+                  (printf "Interest in voter roll for region ~a: ~a\n" region voters-per-region)
+                  (assert (voter-roll region (hash-ref voters-per-region region (set)))))))))
 
 ;; Name -> [[Listof Candidate] -> [Listof Candidate]]
 (define (stupid-sort cand-name)
@@ -255,12 +276,12 @@
   (spawn
     (field [caucus-results (hash)])
 
-    (spawn-voter-registry)
+    (define reg-deadline (get-one-second-from-now))
 
-    (on (asserted (registration-close))
-        (for ([region regions]) (spawn-leader region)))
+    (spawn-voter-registry reg-deadline regions)
 
-;;     (on-start (for ([region regions]) (spawn-leader region)))
+    (on (asserted (later-than reg-deadline))
+        (for ([region regions]) (spawn-leader region (get-one-second-from-now))))
 
     (on (asserted (elected $name $region))
         (caucus-results (hash-update (caucus-results) name add1 0))
@@ -278,6 +299,11 @@
             (react 
               (printf "The winner of the election is ~a!\n" winning-candidate)
               (assert (outbound (winner winning-candidate)))))))))
+
+;; Changes to make:
+;; 6. Voters should change to:
+;;    a. register and express interest in participating in voting
+;;    b. express interest in what time doors open for participation and assert interest in participating upon seeing the corresponding assertion.
 
 ;; Assumptions made about the manager:
 ;; Every elected announcement is valid

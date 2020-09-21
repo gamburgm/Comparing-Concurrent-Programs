@@ -244,6 +244,7 @@
                          ([(voter region) (in-hash reg-info)])
                  (hash-update voters-per-region region (λ (voters) (set-add voters voter)) (set))))
 
+             ;; FIXME choose something more descriptive, could just use a symbol
              (channel-put start-chan (start))
              (send-registration-info voters-per-region)))
 
