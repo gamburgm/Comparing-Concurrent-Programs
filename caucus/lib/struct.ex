@@ -38,13 +38,14 @@ defmodule CandStruct do
 end
 
 defmodule Register do
-  defstruct [:name, :region]
+  defstruct [:name, :region, :pid]
 end
 
 defmodule ChangeReg do
-  defstruct [:name, :region]
+  defstruct [:name, :region, :pid]
 end
 
 defmodule VoterRoll do
   defstruct [:pid, :region]
 end
+

@@ -1,9 +1,9 @@
 cand_registry = AbstractRegistry.create(CandStruct)
 
-region_manager = RegionManager.spawn([:a, :b, :c, :d, :e], cand_registry)
-ref = Process.monitor(region_manager)
+voter_registry = VoterRegistry.create()
 
-voter_registry = VoterRegistry.create(region_manager)
+region_manager = RegionManager.spawn([:a, :b, :c, :d, :e], cand_registry, voter_registry)
+ref = Process.monitor(region_manager)
 
 Candidate.spawn("Bernie", 50, 0, cand_registry)
 Candidate.spawn("Biden", 25, 0, cand_registry)

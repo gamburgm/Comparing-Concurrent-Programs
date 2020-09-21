@@ -50,47 +50,52 @@ end
 defmodule VoterRegistry do
   defstruct [:voters]
 
-  def create(manager_pid) do
-    spawn fn -> start_registration(manager_pid) end
+  def create do
+    spawn fn -> 
+      receive do
+        {:deadline_info, deadline_time, regions} ->
+          start_registration(deadline_time, regions) 
+      end
+    end
   end
 
-  def start_registration(manager_pid) do
-    Process.send_after self(), :timeout, 1000
-    manage_registrants(%{}, manager_pid)
+  def start_registration(deadline_time, regions) do
+    Process.send_after self(), :deadline, deadline_time - :os.system_time(:millisecond)
+    manage_registrants(%{}, deadline_time, MapSet.new(regions))
   end
 
-  def manage_registrants(reg_info, manager_pid) do
+  def manage_registrants(reg_info, deadline_time, valid_regions) do
     receive do
-      :timeout ->
-        send manager_pid, {:reg_complete, self()}
-        voters_per_region = Enum.reduce(reg_info, %{}, fn {voter, region}, acc -> 
-          Map.update(acc, region, MapSet.new([voter]), fn voters -> MapSet.put(voters, voter) end)
+      :deadline ->
+        voters_per_region = Enum.reduce(reg_info, %{}, fn {voter, %{region: region, pid: pid}}, acc -> 
+          Map.update(acc, region, MapSet.new([%{name: voter, pid: pid}]), fn voters -> MapSet.put(voters, %{name: voter, pid: pid}) end)
         end)
 
-        send_reg_info(voters_per_region)
-      %Register{name: name, region: region} ->
-        # FIXME swap the cases
-        if Map.has_key?(reg_info, name) do
-          manage_registrants(reg_info, manager_pid)
+        serve_reg_info(voters_per_region)
+      {:registration_deadline, pid} ->
+        send pid, {:reg_deadline_time, deadline_time}
+        manage_registrants(reg_info, deadline_time, valid_regions)
+      %Register{name: name, region: region, pid: pid} ->
+        if Map.has_key?(reg_info, name) and MapSet.member?(valid_regions, region) do
+          manage_registrants(reg_info, deadline_time, valid_regions)
         else
-          manage_registrants(Map.put(reg_info, name, region), manager_pid)
+          manage_registrants(Map.put(reg_info, name, %{region: region, pid: pid}), deadline_time, valid_regions)
         end
-      %ChangeReg{name: name, region: region} ->
-        if Map.has_key?(reg_info, name) do
-          manage_registrants(Map.replace!(reg_info, name, region), manager_pid)
+      %ChangeReg{name: name, region: region, pid: pid} ->
+        if Map.has_key?(reg_info, name) and MapSet.member?(valid_regions, region) do
+          manage_registrants(Map.replace!(reg_info, name, %{region: region, pid: pid}), deadline_time, valid_regions)
         else
-          manage_registrants(reg_info, manager_pid)
+          manage_registrants(reg_info, deadline_time, valid_regions)
         end
     end
   end
 
-  # is it going to blow up if it receives something else? FIXME
-  def send_reg_info(voters_per_region) do
+  def serve_reg_info(voters_per_region) do
     receive do
       %VoterRoll{pid: pid, region: region} ->
         send pid, %VoterRegistry{voters: Map.get(voters_per_region, region, MapSet.new())}
     end
-    send_reg_info(voters_per_region)
+    serve_reg_info(voters_per_region)
   end
 end
 
@@ -159,7 +164,7 @@ defmodule Voter do
     spawn fn ->
       participation_registry = Process.whereis region
       send participation_registry, {:publish, self(), %VoterStruct{name: name, pid: self()}}
-      send voter_registry, %Register{name: name, region: region}
+      send voter_registry, %Register{name: name, region: region, pid: self()}
       send cand_registry, {:subscribe, self()}
       loop(name, MapSet.new(), prioritize_cands, voting_strategy)
     end
@@ -169,6 +174,7 @@ defmodule Voter do
   # Name [Setof Candidate] ([Enumerable Candidate] -> [Listof Candidate]) -> void
   defp loop(name, candidates, prioritize_cands, voting_strategy) do
     receive do
+      {:close_at, _} -> loop(name, candidates, prioritize_cands, voting_strategy)
       %AbstractRegistry{values: new_candidates, type: CandStruct} ->
         IO.puts "Voter #{name} has received candidates! #{inspect new_candidates}"
         loop(name, new_candidates, prioritize_cands, voting_strategy)
@@ -178,34 +184,6 @@ defmodule Voter do
     end
   end
 end
-
-# defmodule FraudulentVoter do
-#   # Initialize a new voter
-#   # Name Region PID PID ([Setof Candidate] -> [Setof Candidate]) VotingStrategy -> PID
-#   def spawn(name, region, cand_registry, prioritize_cands, voting_strategy) do
-#     spawn fn ->
-#       voter_registry = Process.whereis region
-#       send voter_registry, {:publish, self(), %VoterStruct{name: name, pid: self()}}
-#       send cand_registry, {:subscribe, self()}
-#       loop(name, MapSet.new(), prioritize_cands, voting_strategy, false)
-#     end
-#   end
-
-#   # Respond to messages sent to a voter
-#   # Name [Setof Candidate] ([Enumerable Candidate] -> [Listof Candidate]) -> void
-#   defp loop(name, candidates, prioritize_cands, voting_strategy, voting_region) do
-#     receive do
-#       %SlipUp{leaked_leader: leader_pid} -> 
-#         loop(name, candidates, prioritize_cands, voting_strategy, leader_pid)
-#       %AbstractRegistry{values: new_candidates, type: CandStruct} ->
-#         IO.puts "Voter #{name} has received candidates! #{inspect new_candidates}"
-#         loop(name, new_candidates, prioritize_cands, voting_strategy, voting_region)
-#       {:ballot, eligible_candidates, _vote_leader} ->
-#         voting_strategy.vote(name, candidates, eligible_candidates, voting_region, prioritize_cands)
-#         loop(name, candidates, prioritize_cands, voting_strategy, voting_region)
-#     end
-#   end
-# end
 
 # A Voter that participates in the Caucus
 defmodule RegularVoting do
@@ -261,12 +239,24 @@ defmodule VoteLeader do
   defstruct [:pid]
   # initialize the VoteLeader
   # Region PID PID PID -> PID
-  def spawn(region, candidate_registry, voter_registry, region_manager) do
+  def spawn(region, candidate_registry, voter_registry, region_manager, deadline_time) do
     spawn fn -> 
-      Process.sleep(1000)
       send Process.whereis(region), {:msg, self()}
       send voter_registry, %VoterRoll{pid: self(), region: region}
-      setup_voting(MapSet.new(), MapSet.new(), MapSet.new(), candidate_registry, region_manager)
+      region_voters = receive_region_voters(deadline_time)
+      Process.sleep(deadline_time - :os.system_time(:millisecond))
+      setup_voting(MapSet.new(), region_voters, MapSet.new(), candidate_registry, region_manager)
+    end
+  end
+
+  def receive_region_voters(deadline_time) do
+    receive do
+      %VoterRegistry{voters: new_region_voters} ->
+        IO.puts "Vote leader received voters registered in their region! #{inspect new_region_voters}"
+        Enum.map(new_region_voters, fn %{name: name, pid: pid} ->
+          send pid, {:close_at, deadline_time}
+          name
+        end)
     end
   end
 
@@ -280,7 +270,7 @@ defmodule VoteLeader do
   # Gather the information necessary to start voting and issue votes to voters
   # [Setof Voter] [Setof Candidate] PID -> void
   defp prepare_voting(voters, region_voters, candidates, blacklist, candidate_registry, region_manager) do
-    if !(Enum.empty?(voters) || Enum.empty?(candidates) || Enum.empty?(region_voters)) do
+    if !(Enum.empty?(voters) || Enum.empty?(candidates)) do
       valid_candidates = MapSet.difference(candidates, blacklist)
       issue_votes(voters, valid_candidates)
       voter_lookup = Enum.reduce(voters, %{}, fn voter, acc -> Map.put(acc, voter.name, voter) end)
@@ -304,9 +294,6 @@ defmodule VoteLeader do
         %AbstractRegistry{values: new_candidates, type: CandStruct} ->
           IO.puts "Vote Leader received candidates! #{inspect new_candidates}"
           prepare_voting(voters, region_voters, new_candidates, blacklist, candidate_registry, region_manager)
-        %VoterRegistry{voters: new_region_voters} ->
-          IO.puts "Vote leader received voters registered in their region! #{inspect new_region_voters}"
-          prepare_voting(voters, new_region_voters, candidates, blacklist, candidate_registry, region_manager)
       end
     end
   end
@@ -390,18 +377,25 @@ end
 
 # Aggregates the results of many caucuses to determine a winner for a region
 defmodule RegionManager do
-  def spawn(regions, candidate_registry) do
+  def spawn(regions, candidate_registry, voter_registry) do
     spawn fn ->
-      initialize_regions(regions, candidate_registry)
+      # FIXME arguments are out of order you moron
+      send_deadline_info(:os.system_time(:millisecond) + 1000, regions, voter_registry)
+      initialize_regions(regions, candidate_registry, voter_registry, :os.system_time(:millisecond) + 2000)
       determine_region(regions, %{})
     end
   end
 
-  def initialize_regions(regions, candidate_registry) do
+  def send_deadline_info(deadline_time, regions, voter_registry) do
+    Process.send_after self(), :deadline, deadline_time - :os.system_time(:millisecond)
+    send voter_registry, {:deadline_info, deadline_time, regions}
+  end
+
+  def initialize_regions(regions, candidate_registry, voter_registry, deadline_time) do
     receive do
-      {:reg_complete, voter_registry} ->
+      :deadline ->
         for region <- regions do
-          VoteLeader.spawn(region, candidate_registry, voter_registry, self())
+          VoteLeader.spawn(region, candidate_registry, voter_registry, self(), deadline_time)
         end
     end
   end
@@ -421,6 +415,14 @@ defmodule RegionManager do
     end
   end
 end
+
+# TODO
+# 1. Region Manager should spawn the Voter Registry, supplying the voter registry with the registration deadline and the set of valid regions
+# 2. The Voter Registry must accept a new type of message, requesting the registration deadline
+# 3. The spawned vote leader must send to registered voters what time doors open and close
+# 4. The vote leader must accept participation requests
+# 5. Upon receiving participation requests, the vote leader may proceed and do its regular thing
+
 
 defmodule StupidSort do
   def generate(cand_names) when is_list(cand_names) do
