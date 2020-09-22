@@ -12,6 +12,8 @@
 
 ;; a Region is a string
 
+;; a Time is a number (milliseconds in Unix time)
+
 ;; a Candidate is a (candidate Name Tax-Rate Chan)
 (struct candidate (name tax-rate results-chan) #:transparent)
 
@@ -76,17 +78,29 @@
 ;; a Start is a (start)
 (struct start () #:transparent)
 
-;; a Register is a (register Name Region)
-(struct register (name region) #:transparent)
+;; a Register is a (register Name Region Chan)
+(struct register (name region recv-chan) #:transparent)
 
-;; a ChangeReg is a (change-reg Name Region)
-(struct change-reg (name region) #:transparent)
+;; a ChangeReg is a (change-reg Name Region Chan)
+(struct change-reg (name region recv-chan) #:transparent)
 
 ;; a VoterRoll is a (voter-roll Chan Region)
 (struct voter-roll (recv-chan region) #:transparent)
 
 ;; a ManagerComm is a (manager-comm Chan)
 (struct manager-comm (chan) #:transparent)
+
+;; a RegistrationConfig is a (registration-config Time (Listof Region))
+(struct registration-config (deadline regions) #:transparent)
+
+;; a RegistrationDeadline is a (registration-deadline Chan)
+(struct registration-deadline (chan) #:transparent)
+
+;; a RegistrationDeadlineTime is a (reg-deadline-time Time)
+(struct reg-deadline-time (time) #:transparent)
+
+;; a DoorsClose is a (doors-close-at Time)
+(struct doors-close-at (time) #:transparent)
 
 ;;;; ENTITIES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 1. Candidates        

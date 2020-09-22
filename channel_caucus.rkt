@@ -196,12 +196,13 @@
 (define (voter-skeleton name region voting-procedure voter-participation-registry voter-registry candidate-registry)
   (define receive-candidates-chan (make-channel))
   (define voting-chan (make-channel))
+  (define participation-chan (make-channel))
   (thread
     (thunk
       (log-caucus-evt "Voter ~a is registering!" name)
       (channel-put candidate-registry (subscribe receive-candidates-chan))
       (channel-put voter-participation-registry (publish (voter name region voting-chan)))
-      (channel-put voter-registry (register name region))
+      (channel-put voter-registry (register name region participation-chan))
       (let loop ([candidates (set)])
         (sync
           (handle-evt
@@ -215,25 +216,22 @@
               ;; A request to vote has been received from the Vote Leader!
               [(request-vote available-candidates leader-chan)
                (voting-procedure candidates available-candidates leader-chan)
+               (loop candidates)]))
+          (handle-evt
+            participation-chan
+            (match-lambda
+              [(doors-close-at time)
                (loop candidates)])))))))
-
-;; changes to make elsewhere:
-;; 1. voters need to receive the voter-registry channel and publish information to it
-;; 2. region manager needs to wait until receiving a completion message from the voter registry before initializing the vote leaders
 
 (define (make-voter-registry)
   (define recv-manager-chan (make-channel))
   (define registration-channel (make-channel))
   (define voter-roll-channel (make-channel))
 
-  (define (receive-start-chan msg)
-    (match msg [(manager-comm chan) chan]))
 
-  (define (manage-registrants)
-    (define start-chan (receive-start-chan (channel-get recv-manager-chan)))
+  (define (manage-registrants deadline-time valid-regions)
 
-    (define REGISTRATION-DEADLINE (+ (current-inexact-milliseconds) 1000))
-    (define registration-timeout (alarm-evt REGISTRATION-DEADLINE))
+    (define registration-timeout (alarm-evt deadline-time))
     (let loop ([reg-info (hash)])
       (sync
         (handle-evt
@@ -241,26 +239,35 @@
           (λ (_) 
              (define voters-per-region
                (for/fold ([voters-per-region (hash)])
-                         ([(voter region) (in-hash reg-info)])
-                 (hash-update voters-per-region region (λ (voters) (set-add voters voter)) (set))))
+                         ([(voter voter-info) (in-hash reg-info)])
+                 (match voter-info
+                   [(cons region chan)
+                    (hash-update voters-per-region region (λ (voters) (set-add voters (cons voter chan))) (set))])))
 
-             ;; FIXME choose something more descriptive, could just use a symbol
-             (channel-put start-chan (start))
-             (send-registration-info voters-per-region)))
+
+;;                          ;; FIXME this is trash
+;;                  (hash-update voters-per-region (car voter-info) (λ (voters) (set-add voters (cons voter voter-chan)) (set)))))
+
+             (serve-registration-info voters-per-region)))
 
         (handle-evt
           registration-channel
           (match-lambda
-            [(register name region)
-             (if (not (hash-has-key? reg-info name))
-               (loop (hash-set reg-info name region))
+            [(register name region chan)
+             (if (and (not (hash-has-key? reg-info name))
+                      (set-member? valid-regions region))
+               (loop (hash-set reg-info name (cons region chan)))
                (loop reg-info))]
-            [(change-reg name region) 
-             (if (hash-has-key? reg-info name)
-               (loop (hash-set reg-info name region))
-               (loop reg-info))])))))
+            [(change-reg name region chan)
+             (if (and (hash-has-key? reg-info name)
+                      (set-member? valid-regions region))
+               (loop (hash-set reg-info name (cons region chan)))
+               (loop reg-info))]
+            [(registration-deadline recv-chan)
+             (channel-put recv-chan (reg-deadline-time deadline-time))
+             (loop reg-info)])))))
 
-  (define (send-registration-info voters-per-region)
+  (define (serve-registration-info voters-per-region)
     (let loop ()
       (define voter-roll-request (channel-get voter-roll-channel))
       (match voter-roll-request
@@ -268,17 +275,20 @@
          (channel-put recv-chan (payload (hash-ref voters-per-region region (set))))
          (loop)])))
 
-  (thread (thunk (manage-registrants)))
+  (thread
+    (thunk 
+      (match (channel-get recv-manager-chan)
+        [(registration-config deadline-time regions)
+        (manage-registrants deadline-time (list->set regions))])))
+
   (values recv-manager-chan registration-channel voter-roll-channel))
 
 ;; Make the Vote Leader thread
 ;; Region Chan Chan Chan -> vote leader thread
-(define (make-vote-leader region candidate-registry participation-registry voter-registry results-chan)
+(define (make-vote-leader region candidate-registry participation-registry voter-registry results-chan deadline-time)
   (define retrieve-candidates-chan (make-channel))
   (define retrieve-voters-chan (make-channel))
   (define voting-chan (make-channel))
-      
-  (sleep 1) ;; to make sure all other actors get situated first
 
   ;; Determine the next set of eligible voters
   ;; (Setof Name) -> (Setof Voter)
@@ -293,13 +303,18 @@
     (channel-put voter-registry (voter-roll retrieve-voters-chan region))
     (define voter-payload (channel-get retrieve-voters-chan))
     (match voter-payload
-      [(payload new-voters) new-voters]))
+      [(payload new-voters) 
+       (for/list ([voter-info new-voters])
+         (thread (thunk (channel-put (cdr voter-info) (doors-close-at deadline-time))))
+         (car voter-info))]))
 
   (thread
     (thunk
       (log-caucus-evt "The Vote Leader in region ~a is ready to run the caucus!" region)
 
       (define voters-in-region (receive-region-roll))
+
+      ;; TODO send them all the doors-close time
 
       ;; Start a sequence of votes to determine an elected candidate
       ;; (Setof Name) (Setof Name) -> Candidate
@@ -322,11 +337,12 @@
             (define recv-vote-chan (make-channel))
             (thread (thunk (channel-put (voter-voting-chan voter) (request-vote eligible-cand-names recv-vote-chan))))
             (values (voter-name voter) recv-vote-chan)))
-                
-        (log-caucus-evt "The Vote Leader in region ~a is beginning a new round of voting!" region)
+
+
         (define eligible-candidates (receive-candidates candidate-blacklist))
         (define eligible-voters (receive-voters voter-blacklist))
         (define voting-chan-table (issue-votes eligible-voters eligible-candidates))
+        (log-caucus-evt "The Vote Leader in region ~a is beginning a new round of voting!" region)
         (collect-votes eligible-voters voter-blacklist voting-chan-table eligible-candidates candidate-blacklist))
 
 
@@ -430,11 +446,14 @@
                             (values (set-add voter-blacklist voter-name) (hash-remove voting-record voter-name))])])))
                  (count-votes new-blacklist new-voting-record))))))
 
-    
-      (define winner (run-caucus (set) (set)))
-      (log-caucus-evt "We have a winner ~a in region ~a!" (candidate-name winner) region)
-      (printf "We have a winner ~a in region ~a!\n" (candidate-name winner) region)
-      (channel-put results-chan (declare-winner (candidate-name winner))))))
+      (define participation-timeout (alarm-evt deadline-time))
+      (sync
+        (handle-evt participation-timeout
+          (λ (_)
+            (define winner (run-caucus (set) (set)))
+            (log-caucus-evt "We have a winner ~a in region ~a!" (candidate-name winner) region)
+            (printf "We have a winner ~a in region ~a!\n" (candidate-name winner) region)
+            (channel-put results-chan (declare-winner (candidate-name winner)))))))))
 
 ;; remove declaration behavior
 ;; add a list of regions as an argument to the region-manager
@@ -443,17 +462,19 @@
 ;; Create a region-manager thread and channel
 ;; Chan -> winner announcement
 (define (make-region-manager regions candidate-registry voter-registries voter-roll-chan main-chan recv-manager-chan)
-  (define start-chan (make-channel))
   (define results-chan (make-channel))
   (thread
     (thunk
-      (channel-put recv-manager-chan (manager-comm start-chan))
-      (define start-cue (channel-get start-chan))
-      (match start-cue
-        [(start)
-          (for ([region regions]
-                [registry voter-registries])
-            (make-vote-leader region candidate-registry registry voter-roll-chan results-chan))])
+      (define deadline-time (+ (current-inexact-milliseconds) 1000))
+      (define registration-timeout (alarm-evt deadline-time))
+
+      (channel-put recv-manager-chan (registration-config deadline-time regions))
+      (sync
+        (handle-evt registration-timeout
+          (λ (_)
+             (for ([region regions]
+                   [registry voter-registries])
+               (make-vote-leader region candidate-registry registry voter-roll-chan results-chan (+ (current-inexact-milliseconds) 1000))))))
 
       (let loop ([caucus-results (hash)])
         (define region-winner (channel-get results-chan))
@@ -469,6 +490,13 @@
               (log-caucus-evt "The candidates with the most votes across the regions are ~a!" front-runner-names)
               (channel-put main-chan front-runner-names)]
              [else (loop new-results)])])))))
+
+;; Changes to make:
+;; 1. the Voter Registry will spawn and wait for input from the Region Manager regarding deadline and valid regions
+;; 2. the Voter Registry will service the deadline time upon request, and will otherwise follow the registration API
+;; 3. Upon registration closing, the Region Manager will spawn the Vote Leaders, with their closing doors time
+;; 4. Vote leader tells voters what time doors will close and waits for incoming participation messages
+;; 5. Vote leader then proceeds with those voters interested in participating
 
 ;; A subscriber used to print information for testing
 (define (make-dummy-subscriber pub-sub-chan)

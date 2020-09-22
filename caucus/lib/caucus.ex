@@ -416,14 +416,6 @@ defmodule RegionManager do
   end
 end
 
-# TODO
-# 1. Region Manager should spawn the Voter Registry, supplying the voter registry with the registration deadline and the set of valid regions
-# 2. The Voter Registry must accept a new type of message, requesting the registration deadline
-# 3. The spawned vote leader must send to registered voters what time doors open and close
-# 4. The vote leader must accept participation requests
-# 5. Upon receiving participation requests, the vote leader may proceed and do its regular thing
-
-
 defmodule StupidSort do
   def generate(cand_names) when is_list(cand_names) do
     fn candidates ->
