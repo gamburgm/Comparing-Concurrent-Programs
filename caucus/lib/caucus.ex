@@ -50,6 +50,8 @@ end
 defmodule VoterRegistry do
   defstruct [:voters]
 
+  # Initialize a Voter Registry for managing the voters eligible to vote in each region
+  # -> PID
   def create do
     spawn fn -> 
       receive do
@@ -59,11 +61,15 @@ defmodule VoterRegistry do
     end
   end
 
+  # Initialize a registration deadline for the Voter Registry
+  # Time [Region] -> void
   def start_registration(deadline_time, regions) do
     Process.send_after self(), :deadline, deadline_time - :os.system_time(:millisecond)
     manage_registrants(%{}, deadline_time, MapSet.new(regions))
   end
 
+  # Accept registration requests from voters
+  # {Name -> {Region, PID}} Time Set(Region)
   def manage_registrants(reg_info, deadline_time, valid_regions) do
     receive do
       :deadline ->
@@ -90,6 +96,8 @@ defmodule VoterRegistry do
     end
   end
 
+  # Respond to requests for the voters registered in a region
+  # {Region -> Set({Name, PID})}
   def serve_reg_info(voters_per_region) do
     receive do
       %VoterRoll{pid: pid, region: region} ->

@@ -71,8 +71,10 @@
 ;; voter roll in each region. Registration opens in a time window prior
 ;; to voting beginning, where voters may freely change which region they're
 ;; registered in, enforcing that they are only registered in one location at a time
-;; (where they registered most recently). Upon completion of registration,
-;; the registry alerts the region manager that voting may proceed.
+;; (where they registered most recently). 
+;; To participate in the Caucus, a voter must both register in the Voter
+;; Registry, and announce that they are participating in voting through
+;; a `voter` assertion with their name and the correct registered region.
 
 ;; There is a conversation about voting:
 
@@ -80,9 +82,6 @@
 ;; with a new ID and the list of candidates still in the running. Voters vote in
 ;; a certain round by making a Vote assertion with the corresponding round ID,
 ;; their name, and the name of the candidate they are voting for.
-
-;; There is an election results conversation, where the Caucus Leader announces
-;; the winner with an Elected assertion
 
 ;; There is a conversation about the winner for a region. Each region is identified by
 ;; a name that voters explicitly register for. When a candidate is elected by a caucus,

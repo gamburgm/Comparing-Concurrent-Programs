@@ -45,8 +45,8 @@
 # 6. Voter Registry
 # 7. Region Manager
 #
-# There are two presence-oriented conversations:
-# 2. Candidates announce themselves as eliglble to vote.
+# There is a presence-oriented conversation:
+# 1. Candidates announce themselves as eliglble to vote to the candidate registry.
 #
 # There is a conversation about voter registration:
 # 1. The region manager tells the voter registry when the registration deadline is and what regions are open for registration.
@@ -60,10 +60,12 @@
 # 1. Vote leaders request the voters eligible to vote in their region from the Voter Registry.
 # 2. Upon receiving that information, they alert all voters in their region that doors have opened and what time doors will closed (at which point new 
 #    participants will be turned away).
-# 3. Voters express interest in participating in the election in their region.
-# 4. After doors have closed, the Vote Leader sends ballots to all voters containing the list of all currently eligible candidates.
-# 5. Voters submit a vote with their preferred candidate.
-# 6. If one candidate receives a 50%> majority of the vote, that candidate wins that region and that information is sent to the Region Manager. Otherwise,
+# 3. Voters express interest in participating in the election in their region to their local Participation Registry.
+# 4. After doors have closed, the Vote Leader requests the participating voters in the region from the Participation Registry and all eligible candidates from
+#    the Candidate Registry.
+# 5. The Vote Leader sends ballots to all voters, containing the list of all currently eligible candidates.
+# 6. Voters submit a vote with their preferred candidate.
+# 7. If one candidate receives a 50%> majority of the vote, that candidate wins that region and that information is sent to the Region Manager. Otherwise,
 #    the candidate with the fewest votes is eliminated from the race, and new ballots are sent to the participating voters.
 
 # a CandData is a %CandData{cands: [Setof CandStruct], lookup: [Mapof Name -> CandStruct], blacklist: [Setof CandStruct]}

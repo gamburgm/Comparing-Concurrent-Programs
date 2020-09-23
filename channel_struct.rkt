@@ -118,16 +118,16 @@
 ;; 2. Voters publish their information to their region's Participation Registry through a `voter` struct sent to the Registry's channel
 ;; 3. Candidates can remove themselves from eligibility by sending a `drop-out` struct to the Candidate Registry
 ;;     -> This occurs when the candidate receives a number of votes below the candidate's threshold for staying in the race.
-;; 4. Vote Leaders publish their information to the Region Manager through a `declare-leader` struct
-;; 5. Voters publish their preferred voting region to a Voter Registry by sending a  `register` message to register and a `change-reg` message to change registration.
+;; 4. Voters publish their preferred voting region to a Voter Registry by sending a  `register` message to register and a `change-reg` message to change registration.
 ;;
 ;; Subscribe Conversations
 ;; 1. Voters subscribe to the Candidate Registry to receive the most up-to-date list of available Candidates whenever a candidate registers.
 ;; 2. The Vote Leader subscribes to the Candidate Registry to receive the same information that voters do.
 ;; 
 ;; Message Conversations
-;; 1. The Vote Leader sends a `request-msg` struct to the Voter Registry to receive the most up-to-date list of current voters.
+;; 1. The Vote Leader sends a `request-msg` struct to the Participation Registry to receive the most up-to-date list of current voters.
 ;; 2. The Vote Leader sends a `request-msg` struct to the Candidate Registry to receive the most up-to-date list of available candidates.
+;; 3. The Vote Leader requests the voters eligible to vote in the Leader's region from the Voter Registry.
 ;;
 ;; Voting Conversations
 ;; 1. The Voting Leader sends every Voter (through their `voter` struct) a request to vote through the `request-vote` struct, sending a List of valid candidate names.
@@ -137,6 +137,7 @@
 ;; 5. When a candidate wins an election, the Vote Leader publishes that information to the Region Manager. When all caucuses have reported, the majority winner is elected.
 ;;
 ;; Voter Registry Conversation
-;; 1. The Voter Registry signals to the Region Manager that voting begin after registration has finished.
+;; 1. The Region Manager tells the Voter Registry what regions to accept registration for and when registration will close.
+;; 2. The Voter Registry enables voters to register and query for what time registration will close.
 ;; 2. The Vote Leaders query the Voter Registry for the list of all valid voters in their region.
 
