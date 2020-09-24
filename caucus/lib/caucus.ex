@@ -55,7 +55,7 @@ defmodule VoterRegistry do
   def create do
     spawn fn -> 
       receive do
-        {:deadline_info, deadline_time, regions} ->
+        {:registration_info, deadline_time, regions} ->
           start_registration(deadline_time, regions) 
       end
     end
@@ -63,33 +63,43 @@ defmodule VoterRegistry do
 
   # Initialize a registration deadline for the Voter Registry
   # Time [Region] -> void
-  def start_registration(deadline_time, regions) do
+  defp start_registration(deadline_time, regions) do
     Process.send_after self(), :deadline, deadline_time - :os.system_time(:millisecond)
     manage_registrants(%{}, deadline_time, MapSet.new(regions))
   end
 
   # Accept registration requests from voters
   # {Name -> {Region, PID}} Time Set(Region)
-  def manage_registrants(reg_info, deadline_time, valid_regions) do
+  defp manage_registrants(reg_info, deadline_time, valid_regions) do
     receive do
       :deadline ->
-        voters_per_region = Enum.reduce(reg_info, %{}, fn {voter, %{region: region, pid: pid}}, acc -> 
-          Map.update(acc, region, MapSet.new([%{name: voter, pid: pid}]), fn voters -> MapSet.put(voters, %{name: voter, pid: pid}) end)
+        voters_per_region = Enum.reduce(reg_info, %{}, fn {voter, region}, acc -> 
+          Map.update(acc, region, MapSet.new([name]), fn voters -> MapSet.put(voters, voter) end)
         end)
 
         serve_reg_info(voters_per_region)
+      # FIXME need to move this to RegionManager?
       {:registration_deadline, pid} ->
         send pid, {:reg_deadline_time, deadline_time}
         manage_registrants(reg_info, deadline_time, valid_regions)
-      %Register{name: name, region: region, pid: pid} ->
-        if Map.has_key?(reg_info, name) and MapSet.member?(valid_regions, region) do
-          manage_registrants(reg_info, deadline_time, valid_regions)
-        else
-          manage_registrants(Map.put(reg_info, name, %{region: region, pid: pid}), deadline_time, valid_regions)
+      %Register{name: name, region: region} ->
+        cond do
+          registered?(reg_info, name) ->
+            manage_registrants(reg_info, deadline_time, valid_regions)
+          valid_region?(regions, region) ->
+            manage_registrants(Map.put(reg_info, name, region), deadline_time, valid_regions)
+          true ->
+            manage_registrants(reg_info, deadline_time, valid_regions)
         end
-      %ChangeReg{name: name, region: region, pid: pid} ->
-        if Map.has_key?(reg_info, name) and MapSet.member?(valid_regions, region) do
-          manage_registrants(Map.replace!(reg_info, name, %{region: region, pid: pid}), deadline_time, valid_regions)
+      %ChangeReg{name: name, region: region} ->
+        if registered?(reg_info, name) && valid_region?(regions, region) do
+          manage_registrants(Map.replace!(reg_info, name, region), deadline_time, valid_regions)
+        else
+          manage_registrants(reg_info, deadline_time, valid_regions)
+        end
+      %Unregister{name: name} ->
+        if registered?(reg_info, name) do
+          manage_registrants(Map.delete(reg_info, name), deadline_time, valid_regions)
         else
           manage_registrants(reg_info, deadline_time, valid_regions)
         end
@@ -98,12 +108,20 @@ defmodule VoterRegistry do
 
   # Respond to requests for the voters registered in a region
   # {Region -> Set({Name, PID})}
-  def serve_reg_info(voters_per_region) do
+  defp serve_reg_info(voters_per_region) do
     receive do
       %VoterRoll{pid: pid, region: region} ->
         send pid, %VoterRegistry{voters: Map.get(voters_per_region, region, MapSet.new())}
     end
     serve_reg_info(voters_per_region)
+  end
+
+  defp valid_region?(regions, region) do
+    MapSet.member?(regions, region)
+  end
+
+  defp registered?(reg_info, name) do
+    Map.has_key?(reg_info, name)
   end
 end
 
@@ -387,16 +405,15 @@ end
 defmodule RegionManager do
   def spawn(regions, candidate_registry, voter_registry) do
     spawn fn ->
-      # FIXME arguments are out of order you moron
-      send_deadline_info(:os.system_time(:millisecond) + 1000, regions, voter_registry)
+      send_registration_info(:os.system_time(:millisecond) + 1000, regions, voter_registry)
       initialize_regions(regions, candidate_registry, voter_registry, :os.system_time(:millisecond) + 2000)
       determine_region(regions, %{})
     end
   end
 
-  def send_deadline_info(deadline_time, regions, voter_registry) do
+  def send_registration_info(deadline_time, regions, voter_registry) do
     Process.send_after self(), :deadline, deadline_time - :os.system_time(:millisecond)
-    send voter_registry, {:deadline_info, deadline_time, regions}
+    send voter_registry, {:registration_info, deadline_time, regions}
   end
 
   def initialize_regions(regions, candidate_registry, voter_registry, deadline_time) do

@@ -84,6 +84,9 @@
 ;; a ChangeReg is a (change-reg Name Region Chan)
 (struct change-reg (name region recv-chan) #:transparent)
 
+;; an Unregister is an (unregister Name)
+(struct unregister (name) #:transparent)
+
 ;; a VoterRoll is a (voter-roll Chan Region)
 (struct voter-roll (recv-chan region) #:transparent)
 

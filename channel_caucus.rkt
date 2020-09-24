@@ -228,25 +228,22 @@
   (define registration-channel (make-channel))
   (define voter-roll-channel (make-channel))
 
-
   (define (manage-registrants deadline-time valid-regions)
 
     (define registration-timeout (alarm-evt deadline-time))
+
     (let loop ([reg-info (hash)])
+      (define (registered? name) (hash-has-key? reg-info name))
+      (define (valid-region? region) (set-member? valid-regions region))
+
       (sync
         (handle-evt
           registration-timeout
           (λ (_) 
              (define voters-per-region
                (for/fold ([voters-per-region (hash)])
-                         ([(voter voter-info) (in-hash reg-info)])
-                 (match voter-info
-                   [(cons region chan)
-                    (hash-update voters-per-region region (λ (voters) (set-add voters (cons voter chan))) (set))])))
-
-
-;;                          ;; FIXME this is trash
-;;                  (hash-update voters-per-region (car voter-info) (λ (voters) (set-add voters (cons voter voter-chan)) (set)))))
+                         ([(voter name) (in-hash reg-info)])
+                 (hash-update voters-per-region region (λ (voters) (set-add voters name)) (set))))
 
              (serve-registration-info voters-per-region)))
 
@@ -254,14 +251,17 @@
           registration-channel
           (match-lambda
             [(register name region chan)
-             (if (and (not (hash-has-key? reg-info name))
-                      (set-member? valid-regions region))
-               (loop (hash-set reg-info name (cons region chan)))
-               (loop reg-info))]
+             (cond
+               [(registered? name) (loop reg-info)]
+               [(valid-region? region) (loop (hash-set reg-info name region))]
+               [else (loop reg-info)])]
             [(change-reg name region chan)
-             (if (and (hash-has-key? reg-info name)
-                      (set-member? valid-regions region))
-               (loop (hash-set reg-info name (cons region chan)))
+             (if (and (registered? name) (valid-region? region))
+               (loop (hash-set reg-info name region))
+               (loop reg-info))]
+            [(unregister name)
+             (if (registered? name)
+               (loop (hash-remove reg-info name))
                (loop reg-info))]
             [(registration-deadline recv-chan)
              (channel-put recv-chan (reg-deadline-time deadline-time))
@@ -303,10 +303,7 @@
     (channel-put voter-registry (voter-roll retrieve-voters-chan region))
     (define voter-payload (channel-get retrieve-voters-chan))
     (match voter-payload
-      [(payload new-voters) 
-       (for/list ([voter-info new-voters])
-         (thread (thunk (channel-put (cdr voter-info) (doors-close-at deadline-time))))
-         (car voter-info))]))
+      [(payload new-voters) new-voters]))
 
   (thread
     (thunk
@@ -461,20 +458,20 @@
 
 ;; Create a region-manager thread and channel
 ;; Chan -> winner announcement
-(define (make-region-manager regions candidate-registry voter-registries voter-roll-chan main-chan recv-manager-chan)
+(define (make-region-manager regions candidate-registry participation-registries voter-roll-chan main-chan voter-registry-chan)
   (define results-chan (make-channel))
   (thread
     (thunk
       (define deadline-time (+ (current-inexact-milliseconds) 1000))
       (define registration-timeout (alarm-evt deadline-time))
 
-      (channel-put recv-manager-chan (registration-config deadline-time regions))
+      (channel-put voter-registry-chan (registration-config deadline-time regions))
       (sync
         (handle-evt registration-timeout
           (λ (_)
              (for ([region regions]
-                   [registry voter-registries])
-               (make-vote-leader region candidate-registry registry voter-roll-chan results-chan (+ (current-inexact-milliseconds) 1000))))))
+                   [part-registry participation-registries])
+               (make-vote-leader region candidate-registry part-registry voter-roll-chan results-chan (+ (current-inexact-milliseconds) 1000))))))
 
       (let loop ([caucus-results (hash)])
         (define region-winner (channel-get results-chan))

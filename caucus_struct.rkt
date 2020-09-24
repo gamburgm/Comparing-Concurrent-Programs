@@ -16,8 +16,8 @@
 
 ;; a Time is a Number (number of milliseconds in Unix time)
 
-;; a Voter is a (voter Name Region)
-(assertion-struct voter (name region))
+;; a Participating is a (participating Name Region)
+(assertion-struct participating (name region))
 
 ;; a Vote is a (voter Name ID Region Name), where the first name is the voter and the
 ;; second is who they are voting for
@@ -55,6 +55,9 @@
 
 ;; a DoorsClose is a (doors-close Time)
 (assertion-struct doors-close (at))
+
+;; an Unregister is an (unregister Name)
+(assertion-struct unregister (name))
 
 ;; There are four actor roles:
 ;; - Caucus Leaders

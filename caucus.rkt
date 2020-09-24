@@ -43,9 +43,9 @@
   (spawn
     (printf "Voter ~a is intending to register in region ~a!\n" name region)
     (define/query-set candidates (candidate $name $tr) (candidate name tr))
-    (assert (register name region))
+    (send! (register name region))
 
-    (when register? (assert (voter name region)))
+    (when register? (assert (participating name region)))
 
     (during (round $id region $round-candidates)
             (voting-procedure id region round-candidates candidates))))
@@ -91,7 +91,7 @@
        (when (and (not registered?) (>= round-count round-limit))
          (begin
            (set! registered? #t)
-           (assert (voter name region))))
+           (assert (participating name region))))
        (assert #:when registered? (vote name id region (ranked-vote (candidates) round-candidates rank-candidates))))
 
     (voter-skeleton voting-procedure name region #f))
@@ -117,7 +117,7 @@
 (define (spawn-region-changing-voter name first-region second-region rank-candidates)
   (spawn
     (define a-bit-from-now (+ (current-inexact-milliseconds) 100))
-    (assert (voter name first-region))
+    (assert (participating name first-region))
 
     (on (asserted (later-than a-bit-from-now))
         (stop-current-facet (spawn-voter name second-region rank-candidates)))))
@@ -128,7 +128,7 @@
     (printf "The Vote Leader for region ~a has joined the event!\n" region)
     (field [voters-in-region (set)])
 
-    (define/query-set voters (voter $name region) name)
+    (define/query-set voters (participating $name region) name)
     (define/query-set candidates (candidate $name _) name)
 
     (assert (doors-opened (current-inexact-milliseconds)))
@@ -154,7 +154,8 @@
         (printf "Candidates still in the running in ~a for region ~a: ~a\n" round-id region (still-in-the-running))
         (assert (round round-id region (set->list (still-in-the-running))))
 
-        (on (retracted (voter $name region)) 
+        ;; FIXME is this how the protocol should work for participation? invalidated? maybe the naming is wrong?
+        (on (retracted (participating $name region)) 
             (when (set-member? (valid-voters) name) 
               (invalidate-voter name)))
 
@@ -229,23 +230,22 @@
     (define region-lookup (list->set valid-regions))
     (field [voter-reg-status (hash)])
 
-    (assert (registration-deadline deadline))
+    (define (valid-region? region) (set-member? region-lookup region))
+    (define (registered? name) (hash-has-key? (voter-reg-status) name))
 
-    (on (asserted (register $name $region))
-        ;; #:when (and (not (hash-has-key? (voter-reg-status) name))
-        ;;             (set-member? region-lookup region))
-        ;; #:when (<= (current-inexact-milliseconds) deadline)
-        (when (and (not (hash-has-key? (voter-reg-status) name))
-                   (set-member? region-lookup region))
+    (on (message (register $name $region))
+        (when (and (not (registered? name))
+                   (valid-region? region))
           (voter-reg-status (hash-set (voter-reg-status) name region))))
 
-
-    (on (asserted (change-reg $name $region))
-        ;; #:when (and (hash-has-key? (voter-reg-status) name)
-        ;;             (set-member? region-lookup region))
-        (when (and (hash-has-key? (voter-reg-status) name)
-                   (set-member? region-lookup region))
+    (on (message (change-reg $name $region))
+        (when (and (registered? name)
+                   (valid-region? region))
           (voter-reg-status (hash-set (voter-reg-status) name region))))
+
+    (on (message (unregister $name))
+        (when (registered? name)
+          (voter-reg-status (hash-remove (voter-reg-status) name))))
 
     (on (asserted (later-than deadline))
         ;; Transform a hash from voter -> region to a hash from region -> Setof voter
@@ -277,6 +277,8 @@
     (field [caucus-results (hash)])
 
     (define reg-deadline (get-one-second-from-now))
+
+    (assert (registration-deadline reg-deadline))
 
     (spawn-voter-registry reg-deadline regions)
 

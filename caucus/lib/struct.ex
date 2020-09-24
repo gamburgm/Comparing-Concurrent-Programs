@@ -20,7 +20,7 @@
 # a CloseAt is a {:close_at, Time}
 #
 # Messages regarding Voter Registration:
-# a DeadlineInfo is a {:deadline_info, Time, [Listof Region]}
+# a RegistrationInfo is a {:registration_info, Time, [Listof Region]}
 # a RegistrationDeadline is a {:registration_deadline, PID}
 # a Register is a %Register{name: Name, region: Region, pid: PID}
 # a ChangeRegistration is a %ChangeReg{name: Name, region: Region, pid: PID}
@@ -86,11 +86,15 @@ defmodule CandStruct do
 end
 
 defmodule Register do
-  defstruct [:name, :region, :pid]
+  defstruct [:name, :region]
 end
 
 defmodule ChangeReg do
-  defstruct [:name, :region, :pid]
+  defstruct [:name, :region]
+end
+
+defmodule Unregister do
+  defstruct [:name]
 end
 
 defmodule VoterRoll do
