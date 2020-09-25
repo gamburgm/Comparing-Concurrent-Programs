@@ -22,7 +22,7 @@
 # Messages regarding Voter Registration:
 # a RegistrationInfo is a {:registration_info, Time, [Listof Region]}
 # a RegistrationDeadline is a {:registration_deadline, PID}
-# a Register is a %Register{name: Name, region: Region, pid: PID}
+# a Register is a %Register{name: Name, region: Region}
 # a ChangeRegistration is a %ChangeReg{name: Name, region: Region, pid: PID}
 # a VoterRegistry is a %VoterRegistry{voters: [Setof Voter]}
 # a VoterRoll is a %VoterRoll{region: Region, pid: PID}
