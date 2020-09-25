@@ -105,6 +105,21 @@
 ;; a DoorsClose is a (doors-close-at Time)
 (struct doors-close-at (time) #:transparent)
 
+;; a RegisterEvent is a (register-evt Symbol Time)
+(struct register-evt (name time) #:transparent)
+
+;; a GetCalendar is a (get-calendar Chan)
+(struct get-calendar (chan) #:transparent)
+
+;; a Calendar is a (calendar [Hashof Symbol -> Time])
+(struct calendar (events) #:transparent)
+
+;; a GetEventInfo is a (get-evt-info Symbol Chan)
+(struct get-evt-info (name chan) #:transparent)
+
+;; an EventTime is an (evt-time Symbol Time)
+(struct evt-info (name time) #:transparent)
+
 ;;;; ENTITIES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 1. Candidates        
 ;; 2. Candidate Registry

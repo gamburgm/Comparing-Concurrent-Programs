@@ -262,10 +262,7 @@
             [(unregister name)
              (if (registered? name)
                (loop (hash-remove reg-info name))
-               (loop reg-info))]
-            [(registration-deadline recv-chan)
-             (channel-put recv-chan (reg-deadline-time deadline-time))
-             (loop reg-info)])))))
+               (loop reg-info))])))))
 
   (define (serve-registration-info voters-per-region)
     (let loop ()
@@ -452,9 +449,29 @@
             (printf "We have a winner ~a in region ~a!\n" (candidate-name winner) region)
             (channel-put results-chan (declare-winner (candidate-name winner)))))))))
 
-;; remove declaration behavior
-;; add a list of regions as an argument to the region-manager
-;; remove the declaration behavior in the vote leader, just the results behavior
+(define (make-event-registry)
+  (define registration-chan (make-channel))
+  (define evt-info-chan (make-channel))
+
+  (thread
+    (thunk
+      (let loop ([evts (hash)])
+        (sync
+          (handle-evt
+            registration-chan
+            (match-lambda
+              [(register-evt evt-name evt-time)
+               (loop (hash-set evts evt-name evt-time))]))
+          (handle-evt
+            evt-info-chan
+            (match-lambda
+              [(get-calendar recv-chan)
+               (channel-put recv-chan (calendar evts))
+               (loop evts)]
+              [(get-evt-info evt-name recv-chan)
+               (channel-put recv-chan (evt-info evt-name (hash-ref evts evt-name #f)))
+               (loop evts)])))))))
+
 
 ;; Create a region-manager thread and channel
 ;; Chan -> winner announcement
@@ -487,13 +504,6 @@
               (log-caucus-evt "The candidates with the most votes across the regions are ~a!" front-runner-names)
               (channel-put main-chan front-runner-names)]
              [else (loop new-results)])])))))
-
-;; Changes to make:
-;; 1. the Voter Registry will spawn and wait for input from the Region Manager regarding deadline and valid regions
-;; 2. the Voter Registry will service the deadline time upon request, and will otherwise follow the registration API
-;; 3. Upon registration closing, the Region Manager will spawn the Vote Leaders, with their closing doors time
-;; 4. Vote leader tells voters what time doors will close and waits for incoming participation messages
-;; 5. Vote leader then proceeds with those voters interested in participating
 
 ;; A subscriber used to print information for testing
 (define (make-dummy-subscriber pub-sub-chan)
