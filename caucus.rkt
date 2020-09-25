@@ -43,7 +43,9 @@
   (spawn
     (printf "Voter ~a is intending to register in region ~a!\n" name region)
     (define/query-set candidates (candidate $name $tr) (candidate name tr))
-    (send! (register name region))
+
+    (on (asserted 'registration-open)
+        (send! (register name region)))
 
     (when register? (assert (participating name region)))
 
@@ -232,6 +234,8 @@
 
     (define (valid-region? region) (set-member? region-lookup region))
     (define (registered? name) (hash-has-key? (voter-reg-status) name))
+
+    (assert 'registration-open)
 
     (on (message (register $name $region))
         (when (and (not (registered? name))
