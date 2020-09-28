@@ -310,11 +310,6 @@
               (printf "The winner of the election is ~a!\n" winning-candidate)
               (assert (outbound (winner winning-candidate)))))))))
 
-;; Changes to make:
-;; 6. Voters should change to:
-;;    a. register and express interest in participating in voting
-;;    b. express interest in what time doors open for participation and assert interest in participating upon seeing the corresponding assertion.
-
 ;; Assumptions made about the manager:
 ;; Every elected announcement is valid
 ;; The manager is up and running and properly configured before voting begins (there is now 'begin voting' announcement made by the manager)

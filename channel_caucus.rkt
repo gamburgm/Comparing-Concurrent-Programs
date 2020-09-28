@@ -165,7 +165,7 @@
       (log-caucus-evt "Voter ~a is registering!" name)
       (channel-put candidate-registry (subscribe receive-candidates-chan))
       (channel-put voter-participation-registry (publish (voter name region voting-chan)))
-      (channel-put voter-registry (register name region participation-chan))
+      (channel-put voter-registry (register name region))
       (let loop ([candidates (set)])
         (sync
           (handle-evt
@@ -179,11 +179,6 @@
               ;; A request to vote has been received from the Vote Leader!
               [(request-vote available-candidates leader-chan)
                (voting-procedure candidates available-candidates leader-chan)
-               (loop candidates)]))
-          (handle-evt
-            participation-chan
-            (match-lambda
-              [(doors-close-at time)
                (loop candidates)])))))))
 
 (define (make-voter-registry)
@@ -212,20 +207,20 @@
 
         (handle-evt
           registration-channel
-          (match-lambda
-            [(register name region chan)
-             (cond
-               [(registered? name) (loop reg-info)]
-               [(valid-region? region) (loop (hash-set reg-info name region))]
-               [else (loop reg-info)])]
-            [(change-reg name region chan)
-             (if (and (registered? name) (valid-region? region))
-               (loop (hash-set reg-info name region))
-               (loop reg-info))]
-            [(unregister name)
-             (if (registered? name)
-               (loop (hash-remove reg-info name))
-               (loop reg-info))])))))
+          (λ (msg)
+            (define (update-registration name region #:should-be-registered? [should-be-registered? #f])
+              (if (and (valid-region? region)
+                       (equal? should-be-registered? (registered? name)))
+                (loop (hash-set reg-info name region))
+                (loop reg-info)))
+
+            (match msg
+              [(register name region) (update-registration name region #:should-be-registered? #f)]
+              [(change-reg name region) (update-registration name region #:should-be-registered? #t)]
+              [(unregister name)
+               (if (registered? name)
+                 (loop (hash-remove reg-info name))
+                 (loop reg-info))]))))))
 
   (define (serve-registration-info voters-per-region)
     (let loop ()
@@ -409,7 +404,6 @@
           (λ (_)
             (define winner (run-caucus (set) (set)))
             (log-caucus-evt "We have a winner ~a in region ~a!" (candidate-name winner) region)
-            (printf "We have a winner ~a in region ~a!\n" (candidate-name winner) region)
             (channel-put results-chan (declare-winner (candidate-name winner)))))))))
 
 (define (make-event-registry)
@@ -428,9 +422,6 @@
           (handle-evt
             evt-info-chan
             (match-lambda
-              [(get-calendar recv-chan)
-               (channel-put recv-chan (calendar evts))
-               (loop evts)]
               [(get-evt-info evt-name recv-chan)
                (channel-put recv-chan (evt-info evt-name (hash-ref evts evt-name #f)))
                (loop evts)]))))))
@@ -447,8 +438,8 @@
       (define reg-deadline (+ curr-time 1000))
       (define doors-close (+ curr-time 2000))
 
-      (channel-put evt-registry-chan (register-evt 'registration-deadline reg-deadline))
-      (channel-put evt-registry-chan (register-evt 'doors-close doors-close))
+      (channel-put evt-registry-chan (register-evt REG-DEADLINE-NAME reg-deadline))
+      (channel-put evt-registry-chan (register-evt DOORS-CLOSE-NAME doors-close))
 
       (define registration-timeout (alarm-evt reg-deadline))
 
@@ -474,30 +465,6 @@
               (log-caucus-evt "The candidates with the most votes across the regions are ~a!" front-runner-names)
               (channel-put main-chan front-runner-names)]
              [else (loop new-results)])])))))
-
-;; A subscriber used to print information for testing
-(define (make-dummy-subscriber pub-sub-chan)
-  (define updates (make-channel))
-  (thread
-    (thunk
-      (channel-put pub-sub-chan (subscribe updates))
-      (let loop ()
-        (sync
-          (handle-evt
-            updates
-            (λ (evt) (printf "Dummy Subscription: ~a\n" evt) (loop))))))))
-
-;; a receiver used to print information from message-based conversations for testing
-(define (make-dummy-receiver message-chan)
-  (define messages (make-channel))
-  (thread
-    (thunk
-      (channel-put message-chan (request-msg messages))
-      (let loop ()
-        (sync
-          (handle-evt
-          messages
-          (λ (evt) (printf "Dummy Message: ~a\n" evt) (loop))))))))
 
 ;; Return a function that sorts a Listof Name by putting a specified number of Names at the front of the list
 ;; (Listof Name) -> ((Listof Name) -> (Listof Name))

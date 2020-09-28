@@ -79,13 +79,15 @@
 
 ;; There is a conversation about registration:
 ;; The Voter Registry announces that registration has opened with a RegistrationOpen assertion. Voters register by sending
-;; a Register message with the voter's name and registering region. Registration succeeds if the voter hadn't registered
+;; a Register message with the voter's name and registering region. Registration succeeds if the voter hasn't registered
 ;; before, and otherwise fails. Voters change their registration by sending a ChangeRegistration message with their name
 ;; and registering region, which succeeds if the voter has registered before, but otherwise fails. Voters unregister by
 ;; sending an Unregister message with their name, which succeeds if they have registered before, and otherwise fails. 
 ;; If an attempt to change a voter's registration status fails, the Voter Registry sends a RegistrationFailure message
 ;; with the name of the voter and the message that failed. A request to change registration status only takes effect
-;; for an upcoming election if it is received prior to the registration deadline.
+;; for an upcoming election if it is received prior to the registration deadline. 
+;; After the deadline, Vote Leaders express interest in VoterRoll assertions, containing the voters registered in
+;; their region. The Voter Registry replies with the requested VoterRoll assertion.
 
 ;; There are two conversations about participation:
 ;; Voters who have registered announce their interest in participating in their local caucus with a Participating assertion.

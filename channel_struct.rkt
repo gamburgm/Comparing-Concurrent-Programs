@@ -2,19 +2,26 @@
 
 (provide candidate candidate-name candidate-results-chan drop-out loser voter voter-name voter-voting-chan request-msg request-voters request-vote vote ballot-results all-candidates all-voters declare-leader declare-manager declare-winner publish withdraw subscribe message payload)
 
+;;;;;;; CONSTANTS ;;;;;;;
+(define REG-DEADLINE-NAME 'registration-deadline)
+(define DOORS-CLOSE-NAME 'doors-close)
+
+;;;;;;; TYPES ;;;;;;;;;;;
 ;; a Name is a string
 
 ;; a Tax-Rate is a number
 
 ;; a Threshold is a number
 
-;; a Chan is a channel
+;; a Chanof is a channel of some struct or of a union of structs
 
 ;; a Region is a string
 
 ;; a Time is a number (milliseconds in Unix time)
 
-;; a Candidate is a (candidate Name Tax-Rate Chan)
+;; CandidateResults is (Union Loser BallotResults)
+
+;; a Candidate is a (candidate Name Tax-Rate [Chanof CandidateResults])
 (struct candidate (name tax-rate results-chan) #:transparent)
 
 ;; a DropOut is a (drop-out Name)
@@ -23,40 +30,28 @@
 ;; a Loser is a (loser Name)
 (struct loser (name) #:transparent)
 
-;; a Voter is a (voter Name Region Chan)
+;; a Voter is a (voter Name Region [Chanof RequestVote])
 (struct voter (name region voting-chan) #:transparent)
 
-;; a Request-Msg is a (request-msg Chan)
-(struct request-msg (chan) #:transparent)
-
-;; a RequestVoters is a (request-voters Region Chan)
-(struct request-voters (region leader-chan) #:transparent)
-
-;; a Request-Vote is a (request-vote Chan)
+;; a RequestVote is a (request-vote [Chanof Vote])
 (struct request-vote (candidates chan) #:transparent)
 
 ;; a Vote is a (vote Name Name)
 (struct vote (name candidate) #:transparent)
 
-;; a ballot-results is a (ballot-results (Hashof Name . number))
+;; a BallotResults is a (ballot-results (Hashof Name . number))
 (struct ballot-results (votes) #:transparent)
 
-;; an All-Candidates is a (all-candidates [Setof Candidate])
+;; an AllCandidates is a (all-candidates [Setof Candidate])
 (struct all-candidates (candidates) #:transparent)
 
-;; an All-Voters is a (all-voters [Setof Voter])
+;; an AllVoters is a (all-voters [Setof Voter])
 (struct all-voters (voters) #:transparent)
-
-;; a DeclareLeader is a (declare-leader Region Chan)
-(struct declare-leader (region manager-comm-chan) #:transparent)
-
-;; a DeclareManager is a (declare-manager Chan)
-(struct declare-manager (results-chan) #:transparent)
 
 ;; a DeclareWinner is a (declare-winner Name)
 (struct declare-winner (candidate) #:transparent)
 
-;;;;; REGISTRY STRUCTS ;;;;;
+;;;;; ABSTRACT REGISTRY STRUCTS ;;;;;
 
 ;; a Publish is a (publish Any)
 (struct publish (val) #:transparent)
@@ -64,10 +59,10 @@
 ;; a Withdraw is a (withdraw Any)
 (struct withdraw (val) #:transparent)
 
-;; a Subscribe is a (subscribe Chan)
+;; a Subscribe is a (subscribe [Chanof Payload])
 (struct subscribe (subscriber-chan) #:transparent)
 
-;; a Message is a (message Chan)
+;; a Message is a (message [Chanof Payload])
 (struct message (response-chan) #:transparent)
 
 ;; a Payload is a (payload [Setof Any])
@@ -75,44 +70,23 @@
 
 ;;;;;; VOTER REGISTRY STRUCTS ;;;;;
 
-;; a Start is a (start)
-(struct start () #:transparent)
+;; a Register is a (register Name Region)
+(struct register (name region) #:transparent)
 
-;; a Register is a (register Name Region Chan)
-(struct register (name region recv-chan) #:transparent)
-
-;; a ChangeReg is a (change-reg Name Region Chan)
-(struct change-reg (name region recv-chan) #:transparent)
+;; a ChangeReg is a (change-reg Name Region)
+(struct change-reg (name region) #:transparent)
 
 ;; an Unregister is an (unregister Name)
 (struct unregister (name) #:transparent)
 
-;; a VoterRoll is a (voter-roll Chan Region)
+;; a VoterRoll is a (voter-roll [Chanof Payload] Region)
 (struct voter-roll (recv-chan region) #:transparent)
-
-;; a ManagerComm is a (manager-comm Chan)
-(struct manager-comm (chan) #:transparent)
 
 ;; a RegistrationConfig is a (registration-config Time (Listof Region))
 (struct registration-config (deadline regions) #:transparent)
 
-;; a RegistrationDeadline is a (registration-deadline Chan)
-(struct registration-deadline (chan) #:transparent)
-
-;; a RegistrationDeadlineTime is a (reg-deadline-time Time)
-(struct reg-deadline-time (time) #:transparent)
-
-;; a DoorsClose is a (doors-close-at Time)
-(struct doors-close-at (time) #:transparent)
-
 ;; a RegisterEvent is a (register-evt Symbol Time)
 (struct register-evt (name time) #:transparent)
-
-;; a GetCalendar is a (get-calendar Chan)
-(struct get-calendar (chan) #:transparent)
-
-;; a Calendar is a (calendar [Hashof Symbol -> Time])
-(struct calendar (events) #:transparent)
 
 ;; a GetEventInfo is a (get-evt-info Symbol Chan)
 (struct get-evt-info (name chan) #:transparent)
@@ -131,31 +105,40 @@
 ;; 
 
 ;;;; CONVERSATIONS ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-;; Publish Conversations
-;; 1. Candidates publish their information to the Candidate Registry through a `candidate` struct sent to the Registry's channel
-;; 2. Voters publish their information to their region's Participation Registry through a `voter` struct sent to the Registry's channel
-;; 3. Candidates can remove themselves from eligibility by sending a `drop-out` struct to the Candidate Registry
-;;     -> This occurs when the candidate receives a number of votes below the candidate's threshold for staying in the race.
-;; 4. Voters publish their preferred voting region to a Voter Registry by sending a  `register` message to register and a `change-reg` message to change registration.
-;;
-;; Subscribe Conversations
-;; 1. Voters subscribe to the Candidate Registry to receive the most up-to-date list of available Candidates whenever a candidate registers.
-;; 2. The Vote Leader subscribes to the Candidate Registry to receive the same information that voters do.
-;; 
-;; Message Conversations
-;; 1. The Vote Leader sends a `request-msg` struct to the Participation Registry to receive the most up-to-date list of current voters.
-;; 2. The Vote Leader sends a `request-msg` struct to the Candidate Registry to receive the most up-to-date list of available candidates.
-;; 3. The Vote Leader requests the voters eligible to vote in the Leader's region from the Voter Registry.
+;; Publish-Subscribe Conversations
+;; Conversations involve a Pub-Sub server, a publisher, and a subscriber.
+;; Publishers publish information to the server with a Publish message. They may remove the published information with a Withdraw
+;; message. Subscribers can access information from the server with a Message message, which will send to the subscriber the
+;; information currently published to the server with a Payload message. Subscribers can also send a Subscribe message, which
+;; will sign subscribers up to receive updates via a Payload struct whenever a publisher updates information.
+;; This conversation manifests in two ways:
+;; - A Candidate Registry (server) that tracks eligible candidates (publishers) for Vote Leaders and Voters (subscribers).
+;; - a Participation Registry (server) that tracks voters participating in an election (publishers) for Vote Leaders (subscribers).
 ;;
 ;; Voting Conversations
-;; 1. The Voting Leader sends every Voter (through their `voter` struct) a request to vote through the `request-vote` struct, sending a List of valid candidate names.
-;; 2. Voters reply by picking a name to vote for and sending the Vote Leader a `vote` struct.
-;; 3. If one candidate has received a majority of votes, then that candidate is elected. If not, the least voted for candidate is removed, and voting begins again.
-;; 4. At the end of every round of voting, the ballot-results of votes is sent to every Candidate.
-;; 5. When a candidate wins an election, the Vote Leader publishes that information to the Region Manager. When all caucuses have reported, the majority winner is elected.
+;; The Vote Leader asks voters to vote with a Ballot message, containing the list of candidates still in the running. Voters reply with
+;; a Vote message containing the voter's name and the candidate they'd like to vote for. If one candidate has received more than half
+;; of the votes the Vote Leader has received, the Vote Leader declares that candidate the winner of the Vote Leader's region with a
+;; DeclareWinner message sent to the Region manager. Otherwise, the candidate with the least votes is eliminated from the next round of voting.
+;; The Region Manager elects whichever candidate has won the most regions (according to the Vote Leaders).
 ;;
-;; Voter Registry Conversation
-;; 1. The Region Manager tells the Voter Registry what regions to accept registration for and when registration will close.
-;; 2. The Voter Registry enables voters to register and query for what time registration will close.
-;; 2. The Vote Leaders query the Voter Registry for the list of all valid voters in their region.
+;; Registration Conversations
+;; Voters register to vote by sending a Register message to the Voter Registry, containing the name of the Voter and the region the
+;; voter would like to register in. If the voter is unregistered, registration succeeds, and otherwise fails. Voters may change
+;; the region they're registered in with a ChangeRegistration message, containing the voter's name and the region they'd like to
+;; be registered in, which succeeds if the voter is registered and otherwise fails. Voters may also unregister with an Unregister message
+;; containing their name, which succeeds if the Voter is registered but otherwise fails. These changes to the registration status
+;; of voters only take effect for the upcoming election if received prior to the registration deadline.
+;; After the deadline has passed, Vote Leaders request the voters registered in their region with the VoterRoll message, and the
+;; Voter Registry replies with a Payload message with the requested voters.
+;;
+;; Key-Value Store/Event Conversations
+;; Conversations involve a server, publisher and subscriber.
+;; Publishers publish information with a RegisterEvent message containing a key and a value to associate with it.
+;; Subscribers may receive the information stored at a key with a GetEventInfo message with the key of interest,
+;; and the server responds with an EventInfo message containing the value associated with the key if the key
+;; is present, and an empty value otherwise.
+;; This conversation manifests in one way:
+;; - The Event Registry (server) stores deadlines for events posted by the Region Manager (publisher) that affect voters (subscribers), such as the registration deadline.
+;; 
 
