@@ -71,33 +71,27 @@ defmodule VoterRegistry do
   # Accept registration requests from voters
   # {Name -> {Region, PID}} Time Set(Region)
   defp manage_registrants(reg_info, deadline_time, valid_regions) do
+    update_registration = fn name, region, should_be_registered? ->
+      if registered?(reg_info, name) && valid_region?(valid_regions, region) do
+        manage_registrants(Map.put(reg_info, name, region), deadline_time, valid_regions)
+      else
+        manage_registrants(reg_info, deadline_time, valid_regions)
+      end
+    end
+
+    create_registration_record = fn name, region -> update_registration(name, region, true) end
+    change_registration_record = fn name, region -> update_registration(name, region, false) end
+
     receive do
       :deadline ->
         voters_per_region = Enum.reduce(reg_info, %{}, fn {voter, region}, acc -> 
           Map.update(acc, region, MapSet.new([voter]), fn voters -> MapSet.put(voters, voter) end)
         end)
-
         serve_reg_info(voters_per_region)
-      # FIXME need to move this to RegionManager?
-      {:registration_deadline, pid} ->
-        send pid, {:reg_deadline_time, deadline_time}
-        manage_registrants(reg_info, deadline_time, valid_regions)
-      %Register{name: name, region: region} ->
-        cond do
-          registered?(reg_info, name) ->
-            manage_registrants(reg_info, deadline_time, valid_regions)
-          valid_region?(valid_regions, region) ->
-            manage_registrants(Map.put(reg_info, name, region), deadline_time, valid_regions)
-          true ->
-            manage_registrants(reg_info, deadline_time, valid_regions)
-        end
-      %ChangeReg{name: name, region: region} ->
-        if registered?(reg_info, name) && valid_region?(valid_regions, region) do
-          manage_registrants(Map.put(reg_info, name, region), deadline_time, valid_regions)
-        else
-          manage_registrants(reg_info, deadline_time, valid_regions)
-        end
-      %Unregister{name: name} ->
+
+      {:register, name, region} -> create_registration_record(name, region)
+      {:change_reg, name, region} -> update_registration_record(name, region)
+      {:unregister, name} ->
         if registered?(reg_info, name) do
           manage_registrants(Map.delete(reg_info, name), deadline_time, valid_regions)
         else
@@ -110,7 +104,7 @@ defmodule VoterRegistry do
   # {Region -> Set({Name, PID})}
   defp serve_reg_info(voters_per_region) do
     receive do
-      %VoterRoll{pid: pid, region: region} ->
+      {:voter_roll, pid, region} ->
         send pid, %VoterRegistry{voters: Map.get(voters_per_region, region, MapSet.new())}
     end
     serve_reg_info(voters_per_region)
@@ -190,7 +184,7 @@ defmodule Voter do
     spawn fn ->
       participation_registry = Process.whereis region
       send participation_registry, {:publish, self(), %VoterStruct{name: name, pid: self()}}
-      send voter_registry, %Register{name: name, region: region}
+      send voter_registry, {:register, name, region}
       send cand_registry, {:subscribe, self()}
       loop(name, region, MapSet.new(), prioritize_cands, voting_strategy, event_registry)
     end
@@ -267,7 +261,7 @@ defmodule VoteLeader do
   def spawn(region, candidate_registry, voter_registry, region_manager, deadline_time) do
     spawn fn -> 
       send Process.whereis(region), {:msg, self()}
-      send voter_registry, %VoterRoll{pid: self(), region: region}
+      send voter_registry, {:voter_roll, self(), region}
       region_voters = receive_region_voters(deadline_time)
       Process.sleep(deadline_time - :os.system_time(:millisecond))
       setup_voting(MapSet.new(), region_voters, MapSet.new(), candidate_registry, region_manager)
@@ -404,9 +398,6 @@ defmodule EventRegistry do
     receive do
       {:register_evt, key, val} ->
         loop(Map.put(events, key, val))
-      {:get_calendar, pid} ->
-        send pid, {:calendar, events}
-        loop(events)
       {:get_evt_time, key, pid} ->
         send pid, {:event_time, Map.get(events, key)}
         loop(events)

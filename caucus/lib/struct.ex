@@ -18,23 +18,28 @@
 # a Loser is a :loser
 # an AbstractRegistry response is a %AbstractRegistry{values: [Setof X], type: X}
 # a CloseAt is a {:close_at, Time}
+# a Register is a {:register, Name, Region}
+# a ChangeRegistration is a {:change_reg, Name, Region}
+# an Unregister is a {:unregister, name}
+# a VoterRoll is a {:voter_roll, PID, Region}
 #
 # Messages regarding Voter Registration:
 # a RegistrationInfo is a {:registration_info, Time, [Listof Region]}
 # a RegistrationDeadline is a {:registration_deadline, PID}
-# a Register is a %Register{name: Name, region: Region}
-# a ChangeRegistration is a %ChangeReg{name: Name, region: Region, pid: PID}
+# a Register is a {:register, Name, Region}
+# an Unregister is a {:unregister, Name}
+# a ChangeRegistration is a {:change_reg, Name, Region}
 # a VoterRegistry is a %VoterRegistry{voters: [Setof Voter]}
 # a VoterRoll is a %VoterRoll{region: Region, pid: PID}
 #
+# Messages regarding Pub-Sub:
+# a Publish is a {:publish, PID, Any}
+# a Subscribe is a {:subscribe, PID}
+# a Message is a {:msg, PID}
+# a Remove is a {:remove, PID}
 #
 # a VotingStrategy is a Module with a function that contains a `vote` function with the signature:
 #   Name [Setof Candidate] [Setof Candidate] PID ([Setof Candidate] -> [Setof Candidate]) -> void
-#
-# There are X types of conversations:
-# 1. Presence oriented conversations
-# 2. Voting registration conversations
-# 3. Voting conversations
 #
 # There are 7 sets of actors participating in conversations:
 # 1. Voters
@@ -45,28 +50,32 @@
 # 6. Voter Registry
 # 7. Region Manager
 #
-# There is a presence-oriented conversation:
-# 1. Candidates announce themselves as eliglble to vote to the candidate registry.
+# There are Publish-Subscribe conversations.
+# The roles are a server, publishers, and subscribers. Publishers publish information to the server with a Publish message containing
+# the PID of the Publisher and the data they would like to publish. That information can be withdrawn by the publisher with a Remove
+# message, containing the PID of the publisher. Subscribers can retrieve this information with a Message message, containing the
+# PID of the subscriber, to which the server will respond with a Payload containing the set of information published to the server.
+# Subscribers may also send a Subscribe message with their PID, the consequence of which is that a Payload message will be sent to
+# subscribers whenever a publisher publishes new data or withdraws their data.
+# There are two Publish-Subscribe conversations:
+# - A Candidate Registry (server) tracks eligible candidates (publishers) for voters and vote leaders (subscribers) to view.
+# - a Participation Registry (server) tracks voters (publishers) interested in voting in the election for the vote leaders (subscribers) running the vote in their region.
 #
 # There is a conversation about voter registration:
-# 1. The region manager tells the voter registry when the registration deadline is and what regions are open for registration.
-# 2. The Voter Registry holds the following conversations and responds in kind:
-#     a. Voters express interest in registering to the voter registry if they haven't yet registered.
-#     b. Voters may change their registration if they have already registered.
-#     c. Voters may request the time registration will close.
-# 3. Upon registration closing, the Voter Registry will listen to requests for the Voter Roll of voters in a region and respond with the requested information.
+# Voters register to vote in a region with a Register message containing their name and the region they'd like to vote in. Registration
+# succeeds if the Voter was not previously registered, and fails otherwise. Voters can also change which region they're registered to
+# vote in with a ChangeRegistration message with their name and the state they'd like to be registered in, which succeeds if the voter
+# was already registered, but otherwise fails. Voters can unregister with an Unregister message, which succeeds if the voter is registered,
+# but otherwise fails. Conversations to change the registration status of a voter take effect for the upcoming election only if received prior
+# to the registration deadline.
+# After the deadline has passed, Vote Leaders request the voters registered in their region with a VoterRoll message, and receive the desired
+# information as a VoterRegistry message.
 #
 # There is a conversation about voting:
-# 1. Vote leaders request the voters eligible to vote in their region from the Voter Registry.
-# 2. Upon receiving that information, they alert all voters in their region that doors have opened and what time doors will closed (at which point new 
-#    participants will be turned away).
-# 3. Voters express interest in participating in the election in their region to their local Participation Registry.
-# 4. After doors have closed, the Vote Leader requests the participating voters in the region from the Participation Registry and all eligible candidates from
-#    the Candidate Registry.
-# 5. The Vote Leader sends ballots to all voters, containing the list of all currently eligible candidates.
-# 6. Voters submit a vote with their preferred candidate.
-# 7. If one candidate receives a 50%> majority of the vote, that candidate wins that region and that information is sent to the Region Manager. Otherwise,
-#    the candidate with the fewest votes is eliminated from the race, and new ballots are sent to the participating voters.
+# Vote leaders initiate voting with a Ballot message containing the list of candidates still in the race to participating voters. Voters
+# reply with a Vote message containing their name and the name of the Candidate they would like to vote for. If > 50% of voters vote
+# for one candidate, then that candidate wins the region. Otherwise, the candidate with the fewest votes is removed from the set
+# of eligible candidates and a new Ballot with one fewer candidate is sent to voters in a new round of voting.
 
 # a CandData is a %CandData{cands: [Setof CandStruct], lookup: [Mapof Name -> CandStruct], blacklist: [Setof CandStruct]}
 # CandData represents the status of Candidates during a Vote
@@ -83,21 +92,5 @@ end
 # A Candidate registered for election in the Caucus
 defmodule CandStruct do
   defstruct [:name, :tax_rate, :pid]
-end
-
-defmodule Register do
-  defstruct [:name, :region]
-end
-
-defmodule ChangeReg do
-  defstruct [:name, :region]
-end
-
-defmodule Unregister do
-  defstruct [:name]
-end
-
-defmodule VoterRoll do
-  defstruct [:pid, :region]
 end
 
