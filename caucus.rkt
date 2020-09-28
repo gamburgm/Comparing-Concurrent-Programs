@@ -6,7 +6,7 @@
 
 (provide spawn-candidate spawn-stubborn-candidate spawn-voter spawn-greedy-voter spawn-stubborn-voter
          spawn-leaving-voter spawn-late-joining-voter spawn-not-registered-voter spawn-sleepy-voter
-         spawn-leader spawn-manager stupid-sort)
+         spawn-fraudulent-voter spawn-region-changing-voter spawn-leader spawn-voter-registry spawn-manager stupid-sort)
 
 (define (get-one-second-from-now)
   (+ (current-inexact-milliseconds) 1000))
