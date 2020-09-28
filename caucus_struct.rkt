@@ -51,49 +51,60 @@
 (assertion-struct registration-deadline (deadline))
 
 ;; a DoorsOpened is a (doors-opened Time)
-(assertion-struct doors-opened (time))
+(assertion-struct doors-opened (time region))
 
 ;; a DoorsClose is a (doors-close Time)
-(assertion-struct doors-close (at))
+(assertion-struct doors-close (at region))
 
 ;; an Unregister is an (unregister Name)
 (assertion-struct unregister (name))
 
-;; There are four actor roles:
+;; a RegistrationOpen is a (registration-open)
+(assertion-struct registration-open ())
+
+;; a RegistrationFailure is a (reg-fail Name)
+(assertion-struct reg-fail (name))
+
+;; There are five actor roles:
 ;; - Caucus Leaders
 ;; - Candidates
 ;; - Voters
+;; - Voter Registry
 ;; - Region Manager
 
-;; There are two presence-oriented conversations:
-;; Voters announce their presence through a Voter assertion
-;; Candidates announce their presence through a Candidate assertion
+;; There is a conversation about deadlines:
+;; There are two deadlines that affect participants in the election. The first is for registration, which is announced
+;; by the Region Manager with a RegistrationDeadline assertion. The second is for participation in the election, which
+;; is announced independently by the Vote Leader for each region with a DoorsClose assertion.
 
 ;; There is a conversation about registration:
-;; The Region Manager initializes a Voter Registry to keep track of the 
-;; voter roll in each region. Registration opens in a time window prior
-;; to voting beginning, where voters may freely change which region they're
-;; registered in, enforcing that they are only registered in one location at a time
-;; (where they registered most recently). 
-;; To participate in the Caucus, a voter must both register in the Voter
-;; Registry, and announce that they are participating in voting through
-;; a `voter` assertion with their name and the correct registered region.
+;; The Voter Registry announces that registration has opened with a RegistrationOpen assertion. Voters register by sending
+;; a Register message with the voter's name and registering region. Registration succeeds if the voter hadn't registered
+;; before, and otherwise fails. Voters change their registration by sending a ChangeRegistration message with their name
+;; and registering region, which succeeds if the voter has registered before, but otherwise fails. Voters unregister by
+;; sending an Unregister message with their name, which succeeds if they have registered before, and otherwise fails. 
+;; If an attempt to change a voter's registration status fails, the Voter Registry sends a RegistrationFailure message
+;; with the name of the voter and the message that failed. A request to change registration status only takes effect
+;; for an upcoming election if it is received prior to the registration deadline.
+
+;; There are two conversations about participation:
+;; Voters who have registered announce their interest in participating in their local caucus with a Participating assertion.
+;; Candidates announce that they are eligible to win the election with a Candidate assertion.
 
 ;; There is a conversation about voting:
-
 ;; The Caucus Leader initiates a round of voting by making a Round assertion
 ;; with a new ID and the list of candidates still in the running. Voters vote in
 ;; a certain round by making a Vote assertion with the corresponding round ID,
 ;; their name, and the name of the candidate they are voting for.
 
-;; There is a conversation about the winner for a region. Each region is identified by
-;; a name that voters explicitly register for. When a candidate is elected by a caucus,
-;; they announce the election of that candidate and alert the region manager, who then
-;; closes voting and declares a final winner when one of the candidates has received 
-;; a plurality of the votes.
+;; There is a conversation about the winner for a region.
+;; A Vote Leader declares the winner for their region with an Elected assertion including
+;; the name of the candidate and the name of the region the elected candidate won. The Region
+;; Manager declares whichever candidate has received the most votes the winner with a
+;; Winner assertion.
 
 ;; There are multiple bad actors.
-;; - Stubborn Candidate: a candidate who tries to re-enter the race after having been dropped --> could be implemented differently than the way I have it now
+;; - Stubborn Candidate: a candidate who tries to re-enter the race after having been dropped
 ;; - Greedy Voter: A voter that tries voting twice when possible.
 ;; - Stubborn Voter: A voter that always votes for the same candidate, even if that candidate isn't eligible.
 ;; - Late-Joining Voter: A voter who joins voting late (i.e. isn't available to vote for the first round).

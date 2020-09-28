@@ -44,7 +44,7 @@
     (printf "Voter ~a is intending to register in region ~a!\n" name region)
     (define/query-set candidates (candidate $name $tr) (candidate name tr))
 
-    (on (asserted 'registration-open)
+    (on (asserted (registration-open))
         (send! (register name region)))
 
     (when register? (assert (participating name region)))
@@ -133,8 +133,8 @@
     (define/query-set voters (participating $name region) name)
     (define/query-set candidates (candidate $name _) name)
 
-    (assert (doors-opened (current-inexact-milliseconds)))
-    (assert (doors-close participation-deadline))
+    (assert (doors-opened (current-inexact-milliseconds) region))
+    (assert (doors-close participation-deadline region))
 
     (on (asserted (voter-roll region $voters))
         (voters-in-region voters))
@@ -235,21 +235,25 @@
     (define (valid-region? region) (set-member? region-lookup region))
     (define (registered? name) (hash-has-key? (voter-reg-status) name))
 
-    (assert 'registration-open)
+    (define (update-registration name region #:should-be-registered? [should-be-registered? #f])
+      (if (and (valid-region? region)
+               (equal? should-be-registered? (registered? name)))
+        (voter-reg-status (hash-set (voter-reg-status) name region))
+        (send! (reg-fail name))))
+
+    (assert (registration-open))
 
     (on (message (register $name $region))
-        (when (and (not (registered? name))
-                   (valid-region? region))
-          (voter-reg-status (hash-set (voter-reg-status) name region))))
+        (update-registration name region #:should-be-registered? #f))
 
     (on (message (change-reg $name $region))
-        (when (and (registered? name)
-                   (valid-region? region))
-          (voter-reg-status (hash-set (voter-reg-status) name region))))
+        (update-registration name region #:should-be-registered? #t))
 
+    ;; TODO is there another way to abstract this?
     (on (message (unregister $name))
-        (when (registered? name)
-          (voter-reg-status (hash-remove (voter-reg-status) name))))
+        (if (registered? name)
+          (voter-reg-status (hash-remove (voter-reg-status) name))
+          (send! (reg-fail name))))
 
     (on (asserted (later-than deadline))
         ;; Transform a hash from voter -> region to a hash from region -> Setof voter
