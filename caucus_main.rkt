@@ -76,19 +76,6 @@
 (spawn-voter "AAK" "region2" (stupid-sort "Biden"))
 
 ;; Third Caucus: Region 3
-<<<<<<< HEAD
-(spawn-voter "AAL" "region3" (stupid-sort "Bernie"))
-(spawn-voter "AAM" "region3" (stupid-sort "Bernie"))
-(spawn-voter "AAN" "region3" (stupid-sort "Bernie"))
-(spawn-voter "AAO" "region3" (stupid-sort "Bernie"))
-(spawn-voter "AAP" "region3" (stupid-sort "Bernie"))
-(spawn-voter "AAQ" "region3" (stupid-sort "Bernie"))
-(spawn-voter "AAR" "region3" (stupid-sort "Bernie"))
-(spawn-voter "AAS" "region3" (stupid-sort "Bernie"))
-(spawn-voter "AAT" "region3" (stupid-sort "Biden"))
-(spawn-voter "AAU" "region3" (stupid-sort "Biden"))
-(spawn-voter "AAV" "region3" (stupid-sort "Biden"))
-=======
 (spawn-voter "ZAL" "region3" (stupid-sort "Bernie"))
 (spawn-voter "ZAM" "region3" (stupid-sort "Bernie"))
 (spawn-voter "ZAN" "region3" (stupid-sort "Bernie"))
@@ -100,7 +87,6 @@
 (spawn-voter "ZAT" "region3" (stupid-sort "Biden"))
 (spawn-voter "ZAU" "region3" (stupid-sort "Biden"))
 (spawn-voter "ZAV" "region3" (stupid-sort "Biden"))
->>>>>>> split out definitions from execution
 
 ;; Fourth Caucus: Region 4
 (spawn-voter "AAL" "region4" (stupid-sort "Biden"))
