@@ -58,10 +58,6 @@
 (spawn-not-registered-voter "XY8" "region1" (stupid-sort "Tulsi"))
 (spawn-not-registered-voter "XY9" "region1" (stupid-sort "Tulsi"))
 
-(spawn-fraudulent-voter "foobar" "region1" "region3" (stupid-sort "Tulsi"))
-
-(spawn-region-changing-voter "barfight" "region1" "region2" (stupid-sort "Donkey"))
-
 ;; Second Caucus: Region 2
 (spawn-voter "AAA" "region2" (stupid-sort "Bernie"))
 (spawn-voter "AAB" "region2" (stupid-sort "Donkey"))

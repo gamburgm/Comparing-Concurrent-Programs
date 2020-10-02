@@ -71,16 +71,16 @@ defmodule VoterRegistry do
   # Accept registration requests from voters
   # {Name -> {Region, PID}} Time Set(Region)
   defp manage_registrants(reg_info, deadline_time, valid_regions) do
-    update_registration = fn name, region, should_be_registered? ->
-      if registered?(reg_info, name) && valid_region?(valid_regions, region) do
+    update_registration = fn (name, region, should_be_registered?) ->
+      if (should_be_registered? == registered?(reg_info, name)) && valid_region?(valid_regions, region) do
         manage_registrants(Map.put(reg_info, name, region), deadline_time, valid_regions)
       else
         manage_registrants(reg_info, deadline_time, valid_regions)
       end
     end
 
-    create_registration_record = fn name, region -> update_registration(name, region, true) end
-    change_registration_record = fn name, region -> update_registration(name, region, false) end
+    create_registration_record = fn (name, region) -> update_registration.(name, region, false) end
+    update_registration_record = fn (name, region) -> update_registration.(name, region, true) end
 
     receive do
       :deadline ->
@@ -89,8 +89,8 @@ defmodule VoterRegistry do
         end)
         serve_reg_info(voters_per_region)
 
-      {:register, name, region} -> create_registration_record(name, region)
-      {:change_reg, name, region} -> update_registration_record(name, region)
+      {:register, name, region} -> create_registration_record.(name, region)
+      {:change_reg, name, region} -> update_registration_record.(name, region)
       {:unregister, name} ->
         if registered?(reg_info, name) do
           manage_registrants(Map.delete(reg_info, name), deadline_time, valid_regions)
@@ -260,15 +260,15 @@ defmodule VoteLeader do
   # Region PID PID PID -> PID
   def spawn(region, candidate_registry, voter_registry, region_manager, deadline_time) do
     spawn fn -> 
-      send Process.whereis(region), {:msg, self()}
       send voter_registry, {:voter_roll, self(), region}
-      region_voters = receive_region_voters(deadline_time)
+      region_voters = receive_region_voters()
       Process.sleep(deadline_time - :os.system_time(:millisecond))
+      send Process.whereis(region), {:msg, self()}
       setup_voting(MapSet.new(), region_voters, MapSet.new(), candidate_registry, region_manager)
     end
   end
 
-  def receive_region_voters(deadline_time) do
+  def receive_region_voters do
     receive do
       %VoterRegistry{voters: new_region_voters} -> new_region_voters
     end

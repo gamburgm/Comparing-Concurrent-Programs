@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide voter vote round candidate candidate-name tally elected winner voter-roll registration-close)
+(provide participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail)
 
 ;; a Name is a (caucus-unique) String
 
