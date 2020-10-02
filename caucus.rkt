@@ -6,7 +6,7 @@
 
 (provide spawn-candidate spawn-stubborn-candidate spawn-voter spawn-greedy-voter spawn-stubborn-voter
          spawn-leaving-voter spawn-late-joining-voter spawn-not-registered-voter spawn-sleepy-voter
-         spawn-fraudulent-voter spawn-region-changing-voter spawn-leader spawn-voter-registry spawn-manager stupid-sort)
+         spawn-region-changing-voter spawn-leader spawn-voter-registry spawn-manager stupid-sort)
 
 (define (get-one-second-from-now)
   (+ (current-inexact-milliseconds) 1000))
@@ -109,20 +109,6 @@
   (define (voting-procedure _a _b _c _d) #f)
 
   (voter-skeleton voting-procedure name region #t))
-
-(define (spawn-fraudulent-voter name registered-region voting-region rank-candidates)
-  (define (voting-procedure id region round-candidates candidates)
-    (assert (vote name id voting-region (ranked-vote (candidates) round-candidates rank-candidates))))
-
-  (voter-skeleton voting-procedure name registered-region #t))
-
-(define (spawn-region-changing-voter name first-region second-region rank-candidates)
-  (spawn
-    (define a-bit-from-now (+ (current-inexact-milliseconds) 100))
-    (assert (participating name first-region))
-
-    (on (asserted (later-than a-bit-from-now))
-        (stop-current-facet (spawn-voter name second-region rank-candidates)))))
 
 ;; Region -> Leader
 (define (spawn-leader region participation-deadline)
