@@ -245,15 +245,6 @@
   (define retrieve-voters-chan (make-channel))
   (define voting-chan (make-channel))
 
-  ;; Determine the next set of eligible voters
-  ;; (Setof Name) -> (Setof Voter)
-  (define (receive-voters voter-blacklist)
-    (channel-put participation-registry (message retrieve-voters-chan))
-    (define voter-payload (channel-get retrieve-voters-chan))
-    (match voter-payload
-      [(payload new-voters)
-        (list->set (filter-voters (set->list new-voters) voter-blacklist))]))
-
   (define (receive-region-roll)
     (channel-put voter-registry (voter-roll retrieve-voters-chan region))
     (define voter-payload (channel-get retrieve-voters-chan))
@@ -263,10 +254,7 @@
   (thread
     (thunk
       (log-caucus-evt "The Vote Leader in region ~a is ready to run the caucus!" region)
-
       (define voters-in-region (receive-region-roll))
-
-      ;; TODO send them all the doors-close time
 
       ;; Start a sequence of votes to determine an elected candidate
       ;; (Setof Name) (Setof Name) -> Candidate
@@ -280,6 +268,15 @@
             [(payload new-candidates)
             (list->set (filter-candidates (set->list new-candidates) candidate-blacklist))]))
 
+      ;; Determine the next set of eligible voters
+      ;; (Setof Name) -> (Setof Voter)
+      (define (receive-voters voter-blacklist)
+        (channel-put participation-registry (message retrieve-voters-chan))
+        (define voter-payload (channel-get retrieve-voters-chan))
+        (match voter-payload
+          [(payload new-voters)
+            (list->set (filter-voters (set->list new-voters) voter-blacklist))]))
+
         ;; Issue ballots to all eligible voters and return each voter's voting channel
         ;; (Setof Voter) (Setof Candidate) -> (Hashof Name -> Chan)
         (define (issue-votes eligible-voters eligible-candidates)
@@ -290,13 +287,11 @@
             (thread (thunk (channel-put (voter-voting-chan voter) (request-vote eligible-cand-names recv-vote-chan))))
             (values (voter-name voter) recv-vote-chan)))
 
-
         (define eligible-candidates (receive-candidates candidate-blacklist))
         (define eligible-voters (receive-voters voter-blacklist))
         (define voting-chan-table (issue-votes eligible-voters eligible-candidates))
         (log-caucus-evt "The Vote Leader in region ~a is beginning a new round of voting!" region)
         (collect-votes eligible-voters voter-blacklist voting-chan-table eligible-candidates candidate-blacklist))
-
 
       ;; Determine winner of a round of voting or eliminate a candidate and move to the next one
       ;; (Setof Voter) (Setof Name) (Hashof Name -> Chan) (Setof Candidate) (Setof Name) -> Candidate
