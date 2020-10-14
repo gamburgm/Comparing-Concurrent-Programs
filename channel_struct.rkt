@@ -94,6 +94,20 @@
 ;; an EventTime is an (evt-time Symbol Time)
 (struct evt-info (name time) #:transparent)
 
+;;;;;;; AUDITOR STRUCTS ;;;;;;;
+
+;; an AuditVoters is an (audit-voters [Chan-of InvalidatedVoters] [Set-of Name])
+(struct audit-voters (recv-chan voters) #:transparent)
+
+;; an InvalidatedVoters is an (invalidated-voters [Set-of Name])
+(struct invalidated-voters (voters) #:transparent)
+
+;; an AuditBallots is an (audit-ballots [Chan-of InvalidatedBallots] [Set-of Name] [List-of (Pair Name Name)])
+(struct audit-ballots (recv-chan candidates votes) #:transparent)
+
+;; an InvalidatedBallots is an (invalidated-ballots [List-of (Pair Name Name)])
+(struct invalidated-ballots (invalid-ballots) #:transparent)
+
 ;;;; ENTITIES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 1. Candidates        
 ;; 2. Candidate Registry
