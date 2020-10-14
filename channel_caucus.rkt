@@ -2,7 +2,7 @@
 (require racket/set)
 (require "channel_struct.rkt")
 
-(provide make-abstract-registry make-candidate make-stubborn-candidate make-voter make-greedy-voter make-stubborn-voter make-sleepy-voter make-voter-registry make-vote-leader make-event-registry make-region-manager stupid-sort)
+(provide make-abstract-registry make-candidate make-stubborn-candidate make-voter make-greedy-voter make-stubborn-voter make-sleepy-voter make-voter-registry make-vote-leader make-event-registry make-auditor make-region-manager stupid-sort)
 
 (define caucus-log (make-logger 'caucus (current-logger)))
 
@@ -238,6 +238,53 @@
 
   (values recv-manager-chan registration-channel voter-roll-channel))
 
+(define (make-auditor region voter-registry)
+  (define retrieve-voters-chan (make-channel))
+  (define audit-chan (make-channel))
+  
+  (thread
+    (thunk
+      (define voters-in-region (receive-region-roll voter-registry retrieve-voters-chan region))
+
+      (let loop ([participating-voters (set)]
+                 [voter-blacklist (set)])
+
+        (define (get-invalid-ballots candidates ballots)
+          (define-values (invalid-ballots good-votes new-blacklist)
+            (for/fold ([invalid-ballots (set)]
+                       [seemingly-good-votes (hash)]
+                       [new-blacklist voter-blacklist])
+                      ([(voter candidate) ballots])
+              (cond
+                [(and (set-member? voters-in-region voter)
+                      (set-member? participating-voters voter)
+                      (not (set-member? new-blacklist voter))
+                      (not (hash-has-key? seemingly-good-votes voter))
+                      (set-member? candidates candidate))
+                 (values invalid-ballots (hash-set seemingly-good-votes voter candidate) new-blacklist)]
+                [(hash-has-key? seemingly-good-votes voter)
+                 (values (set-add (set-add invalid-ballots (cons voter (hash-ref seemingly-good-votes voter))) voter candidate) (hash-remove seemingly-good-votes voter) (set-add new-blacklist voter))]
+                [else (values (set-add invalid-ballots (cons voter candidate)) seemingly-good-votes (set-add new-blacklist voter))])))
+
+          (values invalid-ballots new-blacklist))
+
+        (define audit-request (channel-get audit-chan))
+        (match audit-request
+          [(audit-voters recv-chan voters)
+           (define invalid-voters (set-subtract voters voters-in-region))
+           (channel-put recv-chan (invalidated-voters invalid-voters))
+           (loop voters invalid-voters)]
+          [(audit-votes recv-chan candidates votes)
+           (define-values (invalid-ballots new-blacklist) (get-invalid-ballots candidates votes))
+           (channel-put recv-chan (invalidated-ballots invalid-ballots))
+           (loop participating-voters new-blacklist)])))))
+
+(define (receive-region-roll voter-registry retrieve-voters-chan region)
+  (channel-put voter-registry (voter-roll retrieve-voters-chan region))
+  (define voter-payload (channel-get retrieve-voters-chan))
+  (match voter-payload
+    [(payload voters) voters]))
+
 ;; Make the Vote Leader thread
 ;; Region Chan Chan Chan -> vote leader thread
 (define (make-vote-leader region candidate-registry participation-registry voter-registry results-chan deadline-time)
@@ -245,16 +292,10 @@
   (define retrieve-voters-chan (make-channel))
   (define voting-chan (make-channel))
 
-  (define (receive-region-roll)
-    (channel-put voter-registry (voter-roll retrieve-voters-chan region))
-    (define voter-payload (channel-get retrieve-voters-chan))
-    (match voter-payload
-      [(payload new-voters) new-voters]))
-
   (thread
     (thunk
       (log-caucus-evt "The Vote Leader in region ~a is ready to run the caucus!" region)
-      (define voters-in-region (receive-region-roll))
+      (define voters-in-region (receive-region-roll voter-registry retrieve-voters-chan region))
 
       ;; Start a sequence of votes to determine an elected candidate
       ;; (Setof Name) (Setof Name) -> Candidate
