@@ -125,7 +125,7 @@ defmodule Auditor do
     spawn fn -> 
       send voter_registry, {:voter_roll, self(), region}
       registered_voters = RegionVoters.receive()
-      loop(region_voters, MapSet.new(), MapSet.new())
+      loop(registered_voters, MapSet.new(), MapSet.new())
     end
   end
 
@@ -143,29 +143,35 @@ defmodule Auditor do
   end
 
   defp get_invalid_ballots(region_voters, participating_voters, voter_blacklist, candidates, votes) do
-    successful_ballots = %{}
-    invalid_ballots = MapSet.new()
+    {invalid_ballots, new_blacklist, _} = Enum.reduce(votes, {MapSet.new(), voter_blacklist, %{}},
+      fn {voter, cand}, {invalid_ballots, voter_blacklist, successful_ballots} -> 
+        audit_ballot(region_voters, participating_voters, voter_blacklist, successful_ballots, invalid_ballots, candidates, voter, cand)
+      end)
 
-    # this needs to be nested in a list comprehension
-    for {voter, cand} <- votes do
-      cond do
-        MapSet.member?(region_voters, voter)
-        and MapSet.member?(participating_voters, voter)
-        and not MapSet.member?(voter_blacklist, voter)
-        and not Map.has_key?(successful_ballots, voter)
-        and MapSet.member?(candidates, cand) ->
-          successful_ballots[voter] = cand
-        Map.has_key?(successful_ballots, voter) ->
-          invalid_ballots = MapSet.put(MapSet.put(invalid_ballots, {voter, cand}), voter, successful_ballots[voter])
-          voter_blacklist = MapSet.put(voter_blacklist, voter)
-          successful_ballots = Map.delete(successful_ballots, voter)
-        true ->
-          invalid_ballots = MapSet.put(invalid_ballots, {voter, cand})
-          voter_blacklist = MapSet.put(voter_blacklist, voter)
-      end
+    {invalid_ballots, new_blacklist}
+  end
+
+  defp audit_ballot(region_voters, participating_voters, voter_blacklist, successful_ballots, invalid_ballots, candidates, voter, cand) do
+    cond do
+      MapSet.member?(region_voters, voter)
+      and MapSet.member?(participating_voters, voter)
+      and not MapSet.member?(voter_blacklist, voter)
+      and not Map.has_key?(successful_ballots, voter)
+      and MapSet.member?(candidates, cand) ->
+        {invalid_ballots, voter_blacklist, Map.put(successful_ballots, voter, cand)}
+      Map.has_key?(successful_ballots, voter) ->
+        {
+          MapSet.put(MapSet.put(invalid_ballots, {voter, cand}), {voter, successful_ballots[voter]}),
+          MapSet.put(voter_blacklist, voter),
+          Map.delete(successful_ballots, voter)
+        }
+      true ->
+        {
+          MapSet.put(invalid_ballots, {voter, cand}),
+          MapSet.put(voter_blacklist, voter),
+          successful_ballots
+        }
     end
-
-    {invalid_ballots, voter_blacklist}
   end
 end
 
@@ -316,26 +322,26 @@ defmodule VoteLeader do
   defstruct [:pid]
   # initialize the VoteLeader
   # Region PID PID PID -> PID
-  def spawn(region, candidate_registry, voter_registry, region_manager, deadline_time) do
+  def spawn(region, candidate_registry, voter_registry, auditor, region_manager, deadline_time) do
     spawn fn -> 
       send voter_registry, {:voter_roll, self(), region}
       region_voters = RegionVoters.receive()
       Process.sleep(deadline_time - :os.system_time(:millisecond))
       send Process.whereis(region), {:msg, self()}
-      setup_voting(MapSet.new(), region_voters, MapSet.new(), candidate_registry, region_manager)
+      setup_voting(MapSet.new(), region_voters, MapSet.new(), candidate_registry, auditor, region_manager)
     end
   end
 
   # Query for any prerequisite data for running a round of voting
   # [Setof Voter] PID -> void
-  defp setup_voting(voters, region_voters, blacklist, candidate_registry, region_manager) do
+  defp setup_voting(voters, region_voters, blacklist, candidate_registry, auditor, region_manager) do
     send candidate_registry, {:msg, self()}
-    prepare_voting(voters, region_voters, MapSet.new(), blacklist, candidate_registry, region_manager)
+    prepare_voting(voters, region_voters, MapSet.new(), blacklist, candidate_registry, auditor, region_manager)
   end
 
   # Gather the information necessary to start voting and issue votes to voters
   # [Setof Voter] [Setof Candidate] PID -> void
-  defp prepare_voting(voters, region_voters, candidates, blacklist, candidate_registry, region_manager) do
+  defp prepare_voting(voters, region_voters, candidates, blacklist, candidate_registry, auditor, region_manager) do
     if !(Enum.empty?(voters) || Enum.empty?(candidates)) do
       valid_candidates = MapSet.difference(candidates, blacklist)
       issue_votes(voters, valid_candidates)
@@ -343,23 +349,29 @@ defmodule VoteLeader do
       Process.send_after self(), :timeout, 1000
 
       vote_loop(
-        %VoterData{voters: voters, region_voters: region_voters, lookup: voter_lookup, votes: %{}},
+        %VoterData{voters: voters, region_voters: region_voters, lookup: voter_lookup, votes: MapSet.new()},
         %CandData{
           cands: valid_candidates, 
           lookup: Enum.reduce(valid_candidates, %{}, fn cand, acc -> Map.put(acc, cand.name, cand) end), 
           blacklist: blacklist, 
         },
         candidate_registry,
+        auditor,
         region_manager
       )
     else
+      # FIXME this is too long
       receive do
         %AbstractRegistry{values: new_voters, type: VoterStruct} ->
           IO.puts "Vote leader received voters! #{inspect new_voters}"
-          prepare_voting(new_voters, region_voters, candidates, blacklist, candidate_registry, region_manager)
+          send auditor, {:audit_voters, self(), MapSet.new(Enum.map(new_voters, fn %VoterStruct{name: name, pid: _} -> name end))}
+          receive do
+            {:invalidated_voters, invalid_voters} ->
+              prepare_voting(MapSet.new(Enum.filter(new_voters, fn %VoterStruct{name: name, pid: _} -> not MapSet.member?(invalid_voters, name) end)), region_voters, candidates, blacklist, candidate_registry, auditor, region_manager)
+          end
         %AbstractRegistry{values: new_candidates, type: CandStruct} ->
           IO.puts "Vote Leader received candidates! #{inspect new_candidates}"
-          prepare_voting(voters, region_voters, new_candidates, blacklist, candidate_registry, region_manager)
+          prepare_voting(voters, region_voters, new_candidates, blacklist, candidate_registry, auditor, region_manager)
       end
     end
   end
@@ -373,53 +385,34 @@ defmodule VoteLeader do
 
   # Receive votes from voters and elect a winner if possible
   # VoterData CandData PID PID -> void
-  defp vote_loop(voter_data, cand_data, cand_registry, region_manager) do
-    if MapSet.size(voter_data.voters) == Kernel.map_size(voter_data.votes) do
-      conclude_vote(voter_data, cand_data, cand_registry, region_manager)
-    else
-      receive do
-        :timeout ->
-          conclude_vote(voter_data, cand_data, cand_registry, region_manager)
-        {:vote, voter_name, cand_name} -> 
-          cond do
-            # CASE 1: Already eliminated Voter or Voter in wrong region
-            !Map.has_key?(voter_data.lookup, voter_name) || !Enum.any?(voter_data.region_voters, fn voter -> voter == voter_name end) ->
-              vote_loop(voter_data, cand_data, cand_registry, region_manager)
-            # CASE 2: Stubborn Voter || CASE 3: Greedy Voter
-            !Map.has_key?(cand_data.lookup, cand_name) || Map.has_key?(voter_data.votes, voter_name) ->
-              IO.puts "Voter #{inspect voter_name} has been caught trying to vote for a dropped candidate!"
-
-              vote_loop(
-                %VoterData{
-                  voters: MapSet.delete(voter_data.voters, voter_data.lookup[voter_name]),
-                  region_voters: voter_data.region_voters,
-                  lookup: Map.delete(voter_data.lookup, voter_name),
-                  votes:  Map.delete(voter_data.votes, voter_name)
-                },
-                cand_data,
-                cand_registry,
-                region_manager
-              )
-            # CASE 4: Voter checks out
-            true ->
-              IO.puts "Voter #{inspect voter_name} is voting for candidate #{inspect cand_name}!"
-              new_voting_record = Map.put(voter_data.votes, voter_name, cand_name)
-
-              vote_loop(
-                %{voter_data | votes: new_voting_record},
-                cand_data,
-                cand_registry, 
-                region_manager
-              )
-          end
-      end
+  defp vote_loop(voter_data, cand_data, cand_registry, auditor, region_manager) do
+    receive do
+      :timeout ->
+        audit_votes(voter_data, cand_data, cand_registry, auditor, region_manager)
+      {:vote, voter_name, cand_name} ->
+        IO.puts "Voter #{inspect voter_name} is voting for candidate #{inspect cand_name}!"
+        new_voting_record = MapSet.put(voter_data.votes, {voter_name, cand_name})
+        vote_loop(
+          %{voter_data | votes: new_voting_record},
+          cand_data,
+          cand_registry,
+          auditor,
+          region_manager
+        )
     end
+  end
 
+  defp audit_votes(voter_data, cand_data, cand_registry, auditor, region_manager) do
+    send auditor, {:audit_ballots, self(), MapSet.new(Enum.map(cand_data.cands, fn %CandStruct{name: name, tax_rate: _, pid: _} -> name end)), voter_data.votes}
+    receive do
+      {:invalidated_ballots, invalid_ballots} ->
+        conclude_vote(%{voter_data | votes: MapSet.difference(voter_data.votes, invalid_ballots)}, cand_data, cand_registry, auditor, region_manager)
+    end
   end
 
   # Determine a winner, or if there isn't one, remove a loser and start next voting loop
   # VoterData CandData PID PID -> void
-  defp conclude_vote(voter_data, cand_data, cand_registry, region_manager) do
+  defp conclude_vote(voter_data, cand_data, cand_registry, auditor, region_manager) do
     initial_tally = Enum.reduce(cand_data.cands, %{}, fn %CandStruct{name: cand_name, tax_rate: _, pid: _}, init -> Map.put(init, cand_name, 0) end)
     tally = Enum.reduce(voter_data.votes, initial_tally, fn {_, cand_name}, curr_tally -> Map.update!(curr_tally, cand_name, &(&1 + 1)) end)
 
@@ -436,7 +429,7 @@ defmodule VoteLeader do
       send losing_pid, :loser
       IO.puts "Our loser is #{loser}!"
 
-      setup_voting(confirmed_voters, voter_data.region_voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, region_manager)
+      setup_voting(confirmed_voters, voter_data.region_voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, auditor, region_manager)
     end
   end
 end
@@ -483,7 +476,8 @@ defmodule RegionManager do
     receive do
       :deadline ->
         for region <- regions do
-          VoteLeader.spawn(region, candidate_registry, voter_registry, self(), deadline_time)
+          auditor = Auditor.spawn(region, voter_registry)
+          VoteLeader.spawn(region, candidate_registry, voter_registry, auditor, self(), deadline_time)
         end
     end
   end
