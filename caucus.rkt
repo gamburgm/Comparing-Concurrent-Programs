@@ -151,14 +151,16 @@
         (on (asserted (vote-verification region round-id (still-in-the-running) (submitted-ballots) $invalid-ballots))
             (valid-ballots (set-subtract (submitted-ballots) invalid-ballots)))
 
-        ;; (on-start
-        ;;   (react
-        ;;     (define one-sec-from-now (get-one-second-from-now))
+        (on-start
+          (react
+            (define one-sec-from-now (get-one-second-from-now))
 
-        ;;     (on (asserted (later-than one-sec-from-now))
-        ;;         (printf "Timeout reached on this round!\n")
-        ;;         (valid-voters
-        ;;           (list->set (filter (λ (voter) (hash-has-key? (voter-to-candidate) voter)) (set->list (valid-voters))))))))
+            (on (asserted (later-than one-sec-from-now))
+                (printf "Timeout reached on this round!\n")
+                (valid-voters
+                  (for/fold ([voted (set)])
+                            ([vote (valid-ballots)])
+                    (set-add voted (car vote)))))))
 
         (begin/dataflow
           (define votes
@@ -278,7 +280,6 @@
               (voter-blacklist (set-add (voter-blacklist) voter))
               (values valid-ballots (set-add invalid-ballots (cons voter cand)))])))
 
-      (printf "Invalid ballots: ~a\n" invalid-ballots)
       (assert (vote-verification region round-id cands votes invalid-ballots)))))
         
   ;; 1. get the voters in the region
@@ -305,7 +306,9 @@
     (spawn-voter-registry reg-deadline regions)
 
     (on (asserted (later-than reg-deadline))
-        (for ([region regions]) (spawn-leader region (get-one-second-from-now))))
+        (for ([region regions]) 
+          (spawn-auditor region)
+          (spawn-leader region (get-one-second-from-now))))
 
     (on (asserted (elected $name $region))
         (caucus-results (hash-update (caucus-results) name add1 0))
