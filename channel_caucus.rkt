@@ -254,7 +254,8 @@
             (for/fold ([invalid-ballots (set)]
                        [seemingly-good-votes (hash)]
                        [new-blacklist voter-blacklist])
-                      ([(voter candidate) ballots])
+                      ([ballot ballots])
+              (match-define (cons voter candidate) ballot)
               (cond
                 [(and (set-member? voters-in-region voter)
                       (set-member? participating-voters voter)
@@ -263,7 +264,7 @@
                       (set-member? candidates candidate))
                  (values invalid-ballots (hash-set seemingly-good-votes voter candidate) new-blacklist)]
                 [(hash-has-key? seemingly-good-votes voter)
-                 (values (set-add (set-add invalid-ballots (cons voter (hash-ref seemingly-good-votes voter))) voter candidate) (hash-remove seemingly-good-votes voter) (set-add new-blacklist voter))]
+                 (values (set-add (set-add invalid-ballots (cons voter (hash-ref seemingly-good-votes voter))) (cons voter candidate)) (hash-remove seemingly-good-votes voter) (set-add new-blacklist voter))]
                 [else (values (set-add invalid-ballots (cons voter candidate)) seemingly-good-votes (set-add new-blacklist voter))])))
 
           (values invalid-ballots new-blacklist))
@@ -274,10 +275,11 @@
            (define invalid-voters (set-subtract voters voters-in-region))
            (channel-put recv-chan (invalidated-voters invalid-voters))
            (loop voters invalid-voters)]
-          [(audit-votes recv-chan candidates votes)
+          [(audit-ballots recv-chan candidates votes)
            (define-values (invalid-ballots new-blacklist) (get-invalid-ballots candidates votes))
            (channel-put recv-chan (invalidated-ballots invalid-ballots))
-           (loop participating-voters new-blacklist)])))))
+           (loop participating-voters new-blacklist)]))))
+  audit-chan)
 
 (define (receive-region-roll voter-registry retrieve-voters-chan region)
   (channel-put voter-registry (voter-roll retrieve-voters-chan region))
@@ -353,26 +355,26 @@
 
         (define voter-lookup (create-voter-lookup voters))
 
-
         (let voting-loop ([voting-record '()])
 
           ;; Determine winner if one candidate has received majority of votes, otherwise begin next round of voting
           ;; (Hashof Name -> Voter) (Hashof Name -> Name) (Hashof Name -> number) -> candidate msg to vote leader
           (define (count-votes voting-record)
-            (channel-put auditor-chan (audit-votes audited-votes-chan (map candidate-name (set->list candidates)) voting-record))
+            (channel-put auditor-chan (audit-ballots audited-votes-chan (map candidate-name (set->list candidates)) voting-record))
             (define audit-payload (channel-get audited-votes-chan))
             (match audit-payload
               [(invalidated-ballots invalid-ballots)
                (define valid-ballots (filter (λ (vote) (not (set-member? invalid-ballots vote))) voting-record))
                (define votes
                  (for/fold ([votes (hash)])
-                           ([(voter cand) invalid-ballots])
+                           ([ballot valid-ballots])
+                   (match-define (cons voter cand) ballot)
                    (hash-update votes cand add1 0)))
 
                (define front-runner (argmax (λ (cand) (hash-ref votes (candidate-name cand) 0)) (set->list candidates)))
                (define their-votes (hash-ref votes (candidate-name front-runner) 0))
                (cond
-                 [(> their-votes (/ (hash-count voting-record) 2))
+                 [(> their-votes (/ (length valid-ballots) 2))
                   (log-caucus-evt "Candidate ~a has been elected in region ~a!" (candidate-name front-runner) region)
                   front-runner]
                  [else (next-round votes)])]))
@@ -414,7 +416,7 @@
                    (for/fold ([voting-record voting-record])
                              ([(voter-name voting-chan) (in-hash voting-chan-table)])
                     (cond
-                      [(hash-has-key? voting-record voter-name) voting-record]
+                      [(set-member? already-voted voter-name) voting-record]
                       [else
                         (define vote-attempt (channel-try-get voting-chan))
                         (cond
@@ -473,7 +475,8 @@
           (λ (_)
              (for ([region regions]
                    [part-registry participation-registries])
-               (make-vote-leader region candidate-registry part-registry voter-roll-chan results-chan doors-close)))))
+               (define auditor-chan (make-auditor region voter-roll-chan))
+               (make-vote-leader region candidate-registry part-registry voter-roll-chan auditor-chan results-chan doors-close)))))
 
       (let loop ([caucus-results (hash)])
         (define region-winner (channel-get results-chan))
