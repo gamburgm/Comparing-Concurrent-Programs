@@ -119,6 +119,56 @@ defmodule VoterRegistry do
   end
 end
 
+defmodule Auditor do
+
+  def spawn(region, voter_registry) do
+    spawn fn -> 
+      send voter_registry, {:voter_roll, self(), region}
+      registered_voters = RegionVoters.receive()
+      loop(region_voters, MapSet.new(), MapSet.new())
+    end
+  end
+
+  defp loop(region_voters, participating_voters, voter_blacklist) do
+    receive do
+      {:audit_voters, pid, voters} ->
+        blacklisted_participants = MapSet.difference(voters, region_voters)
+        send pid, {:invalidated_voters, blacklisted_participants}
+        loop(region_voters, MapSet.union(participating_voters, voters), MapSet.union(voter_blacklist, blacklisted_participants))
+      {:audit_ballots, pid, cands, voters} ->
+        {invalid_ballots, new_blacklist} = get_invalid_ballots(region_voters, participating_voters, voter_blacklist, cands, voters)
+        send pid, {:invalidated_ballots, invalid_ballots}
+        loop(region_voters, participating_voters, new_blacklist)
+    end
+  end
+
+  defp get_invalid_ballots(region_voters, participating_voters, voter_blacklist, candidates, votes) do
+    successful_ballots = %{}
+    invalid_ballots = MapSet.new()
+
+    # this needs to be nested in a list comprehension
+    for {voter, cand} <- votes do
+      cond do
+        MapSet.member?(region_voters, voter)
+        and MapSet.member?(participating_voters, voter)
+        and not MapSet.member?(voter_blacklist, voter)
+        and not Map.has_key?(successful_ballots, voter)
+        and MapSet.member?(candidates, cand) ->
+          successful_ballots[voter] = cand
+        Map.has_key?(successful_ballots, voter) ->
+          invalid_ballots = MapSet.put(MapSet.put(invalid_ballots, {voter, cand}), voter, successful_ballots[voter])
+          voter_blacklist = MapSet.put(voter_blacklist, voter)
+          successful_ballots = Map.delete(successful_ballots, voter)
+        true ->
+          invalid_ballots = MapSet.put(invalid_ballots, {voter, cand})
+          voter_blacklist = MapSet.put(voter_blacklist, voter)
+      end
+    end
+
+    {invalid_ballots, voter_blacklist}
+  end
+end
+
 # A pub/sub server for data of some struct
 defmodule AbstractRegistry do
   defstruct [:values, :type]
@@ -253,6 +303,14 @@ defmodule SleepThroughVoting do
   end
 end
 
+defmodule RegionVoters do
+  def receive do
+    receive do
+      %VoterRegistry{voters: region_voters} -> region_voters
+    end
+  end
+end
+
 # The actor that manages voting and elects a winner
 defmodule VoteLeader do
   defstruct [:pid]
@@ -261,16 +319,10 @@ defmodule VoteLeader do
   def spawn(region, candidate_registry, voter_registry, region_manager, deadline_time) do
     spawn fn -> 
       send voter_registry, {:voter_roll, self(), region}
-      region_voters = receive_region_voters()
+      region_voters = RegionVoters.receive()
       Process.sleep(deadline_time - :os.system_time(:millisecond))
       send Process.whereis(region), {:msg, self()}
       setup_voting(MapSet.new(), region_voters, MapSet.new(), candidate_registry, region_manager)
-    end
-  end
-
-  def receive_region_voters do
-    receive do
-      %VoterRegistry{voters: new_region_voters} -> new_region_voters
     end
   end
 
