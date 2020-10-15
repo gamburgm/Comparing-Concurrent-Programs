@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail)
+(provide participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail voter-verification vote-verification)
 
 ;; a Name is a (caucus-unique) String
 
@@ -64,6 +64,12 @@
 
 ;; a RegistrationFailure is a (reg-fail Name)
 (assertion-struct reg-fail (name))
+
+;; a VoterVerification is a (voter-verification Region [Set-of Name] [Set-of Name])
+(assertion-struct voter-verification (region voters invalid))
+
+;; a VoteVerification is a (vote-verification Region ID [Set-of Name] [Set-of [Pair Name Name]] [Set-of [Pair Name Name]])
+(assertion-struct vote-verification (region round candidates votes invalid))
 
 ;; There are five actor roles:
 ;; - Caucus Leaders
