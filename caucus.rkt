@@ -242,6 +242,7 @@
                   (printf "Interest in voter roll for region ~a: ~a\n" region voters-per-region)
                   (assert (voter-roll region (hash-ref voters-per-region region (set)))))))))
 
+;; Region -> Auditor
 (define (spawn-auditor region)
   (spawn
     (field [registered-voters (set)]
@@ -257,30 +258,31 @@
       (assert (voter-verification region voters (voter-blacklist))))
 
     (during (observe (vote-verification region $round-id $cands $votes _))
-      (define-values (_valid invalid-ballots)
-        (for/fold ([valid-ballots (hash)]
-                  [invalid-ballots (set)])
+      (define (audit-ballot invalid-ballots blacklist valid-ballots voter cand)
+        (cond
+          [(and (set-member? (registered-voters) voter)
+                (set-member? (participating-voters) voter)
+                (not (set-member? blacklist voter))
+                (not (hash-has-key? valid-ballots voter))
+                (set-member? cands cand))
+            (values invalid-ballots blacklist (hash-set valid-ballots voter cand))]
+          [(hash-has-key? valid-ballots voter)
+            (values (set-add (set-add invalid-ballots (cons voter cand)) (cons voter (hash-ref valid-ballots voter)))
+                    (set-add blacklist voter)
+                    (hash-remove valid-ballots voter))]
+          [else
+            (values (set-add invalid-ballots (cons voter cand)) (set-add blacklist voter) valid-ballots)]))
+
+      (define-values (invalid-ballots new-blacklist _valid)
+        (for/fold ([invalid-ballots (set)]
+                   [new-blacklist (voter-blacklist)]
+                   [valid-ballots (hash)])
                   ([vote votes])
           (match-define (cons voter cand) vote)
-          (cond
-            [(and (set-member? (registered-voters) voter)
-                  (set-member? (participating-voters) voter)
-                  (not (set-member? (voter-blacklist) voter))
-                  (not (hash-has-key? valid-ballots voter))
-                  (set-member? cands cand))
-            (values (hash-set valid-ballots voter cand) invalid-ballots)]
-            [(hash-has-key? valid-ballots voter)
-            (voter-blacklist (set-add (voter-blacklist) voter))
-            (values (hash-remove valid-ballots voter) (set-add (set-add invalid-ballots (cons voter cand)) (cons voter (hash-ref valid-ballots voter))))]
-            [else
-              (voter-blacklist (set-add (voter-blacklist) voter))
-              (values valid-ballots (set-add invalid-ballots (cons voter cand)))])))
+          (voter-blacklist new-blacklist)
+          (audit-ballot invalid-ballots new-blacklist valid-ballots voter cand)))
 
       (assert (vote-verification region round-id cands votes invalid-ballots)))))
-        
-  ;; 1. get the voters in the region
-  ;; 2. when receiving voters, asserts which ones are invalid
-  ;; 3. when receiving votes, asserts which ones are invalid
 
 ;; Name -> [[Listof Candidate] -> [Listof Candidate]]
 (define (stupid-sort cand-name)
