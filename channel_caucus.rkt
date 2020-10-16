@@ -354,7 +354,7 @@
 
         (define voter-lookup (create-voter-lookup voters))
 
-        (let voting-loop ([voting-record '()])
+        (let voting-loop ([voting-record (set)])
 
           ;; Determine winner if one candidate has received majority of votes, otherwise begin next round of voting
           ;; (Hashof Name -> Voter) (Hashof Name -> Name) (Hashof Name -> number) -> candidate msg to vote leader
@@ -363,7 +363,7 @@
             (define audit-payload (channel-get audited-votes-chan))
             (match audit-payload
               [(invalidated-ballots invalid-ballots)
-               (define valid-ballots (filter (λ (vote) (not (set-member? invalid-ballots vote))) voting-record))
+               (define valid-ballots (set-subtract voting-record invalid-ballots))
                (define votes
                  (for/fold ([votes (hash)])
                            ([ballot valid-ballots])
@@ -373,7 +373,7 @@
                (define front-runner (argmax (λ (cand) (hash-ref votes (candidate-name cand) 0)) (set->list candidates)))
                (define their-votes (hash-ref votes (candidate-name front-runner) 0))
                (cond
-                 [(> their-votes (/ (length valid-ballots) 2))
+                 [(> their-votes (/ (set-count valid-ballots) 2))
                   (log-caucus-evt "Candidate ~a has been elected in region ~a!" (candidate-name front-runner) region)
                   front-runner]
                  [else (next-round votes)])]))
@@ -392,7 +392,7 @@
           (define handle-vote
             (match-lambda
               [(vote name candidate)
-               (cons (cons name candidate) voting-record)]))
+               (set-add voting-record (cons name candidate))]))
 
           (define vote-events
             (apply
@@ -410,7 +410,7 @@
               vote-timeout
               (λ (_)
                  (log-caucus-evt "Round of voting in region ~a is over!" region)
-                 (define already-voted (list->set (map car voting-record)))
+                 (define already-voted (list->set (map car (set->list voting-record))))
                  (define new-voting-record
                    (for/fold ([voting-record voting-record])
                              ([(voter-name voting-chan) (in-hash voting-chan-table)])
