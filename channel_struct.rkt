@@ -19,6 +19,8 @@
 
 ;; a Time is a number (milliseconds in Unix time)
 
+;; a Ballot s a (cons Name Name)
+
 ;; CandidateResults is (Union Loser BallotResults)
 
 ;; a Candidate is a (candidate Name Tax-Rate [Chanof CandidateResults])
@@ -102,10 +104,10 @@
 ;; an InvalidatedVoters is an (invalidated-voters [Set-of Name])
 (struct invalidated-voters (voters) #:transparent)
 
-;; an AuditBallots is an (audit-ballots [Chan-of InvalidatedBallots] [Set-of Name] [List-of (Pair Name Name)])
+;; an AuditBallots is an (audit-ballots [Chan-of InvalidatedBallots] [Set-of Name] [List-of Ballot])
 (struct audit-ballots (recv-chan candidates votes) #:transparent)
 
-;; an InvalidatedBallots is an (invalidated-ballots [List-of (Pair Name Name)])
+;; an InvalidatedBallots is an (invalidated-ballots [List-of Ballot])
 (struct invalidated-ballots (invalid-ballots) #:transparent)
 
 ;;;; ENTITIES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -145,6 +147,21 @@
 ;; of voters only take effect for the upcoming election if received prior to the registration deadline.
 ;; After the deadline has passed, Vote Leaders request the voters registered in their region with the VoterRoll message, and the
 ;; Voter Registry replies with a Payload message with the requested voters.
+;;
+;; Auditing Conversations
+;; Each region contains an Auditor that communicates with the Vote Leader to flag suspicious or illegal activity during the caucus.
+;; Vote Leaders validate all voters wishing to participate by sending an AuditVoters message to the Auditor containing a set of
+;; names. The Auditor responds with an InvalidatedVoters message which contains the participating voters not registered in that region.
+;; Vote Leaders determine which Ballots have violated the rules of the caucus by sending the Ballots to the Auditor in an AuditBallots
+;; message, along with the candidates still in the running in that region. The Auditor responds with an InvalidBallots message containing
+;; the set of Ballots that have violated the rules of the caucus.
+;;
+;; A Ballot is only valid if all of the following are true:
+;; - The voter is registered in the region the ballot was received in
+;; - The voter is participating in the vote managed by the vote leader
+;; - The voter only submits one ballot per round (and if multiple ballots were submitted, all are thrown out)
+;; - The voter votes for a candidate still in the race in that region
+;; - In no previous round did the voter violate any of the above rules
 ;;
 ;; Key-Value Store/Event Conversations
 ;; Conversations involve a server, publisher and subscriber.
