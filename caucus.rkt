@@ -114,17 +114,13 @@
 (define (spawn-leader region participation-deadline)
   (spawn
     (printf "The Vote Leader for region ~a has joined the event!\n" region)
-    (field [voters-in-region (set)]
-           [validated-voters (set)])
+    (field [validated-voters (set)])
 
     (define/query-set voters (participating $name region) name)
     (define/query-set candidates (candidate $name _) name)
 
     (assert (doors-opened (current-inexact-milliseconds) region))
     (assert (doors-close participation-deadline region))
-
-    (on (asserted (voter-roll region $voters))
-        (voters-in-region voters))
 
     (on (asserted (voter-verification region (voters) $invalid-voters))
         (validated-voters (set-subtract (voters) invalid-voters)))

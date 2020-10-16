@@ -289,7 +289,7 @@
 
 ;; Make the Vote Leader thread
 ;; Region Chan Chan Chan -> vote leader thread
-(define (make-vote-leader region candidate-registry participation-registry voter-registry auditor-chan results-chan deadline-time)
+(define (make-vote-leader region candidate-registry participation-registry auditor-chan results-chan deadline-time)
   (define retrieve-candidates-chan (make-channel))
   (define retrieve-voters-chan (make-channel))
   (define audited-voters-chan (make-channel))
@@ -299,7 +299,6 @@
   (thread
     (thunk
       (log-caucus-evt "The Vote Leader in region ~a is ready to run the caucus!" region)
-      (define voters-in-region (receive-region-roll voter-registry retrieve-voters-chan region))
 
       ;; Start a sequence of votes to determine an elected candidate
       ;; (Setof Name) (Setof Name) -> Candidate
@@ -476,7 +475,7 @@
              (for ([region regions]
                    [part-registry participation-registries])
                (define auditor-chan (make-auditor region voter-roll-chan))
-               (make-vote-leader region candidate-registry part-registry voter-roll-chan auditor-chan results-chan doors-close)))))
+               (make-vote-leader region candidate-registry part-registry auditor-chan results-chan doors-close)))))
 
       (let loop ([caucus-results (hash)])
         (define region-winner (channel-get results-chan))

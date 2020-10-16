@@ -86,7 +86,7 @@ end
 # a VoterData is a %VoterData{voters: [Setof VoterStruct], lookup: [Mapof Name -> VoterStruct], votes: [Mapof Name -> Name]}
 # VoterData represents the status of Voters during a Vote
 defmodule VoterData do
-  defstruct [:voters, :region_voters, :lookup, :votes]
+  defstruct [:voters, :lookup, :votes]
 end
 
 # A Candidate registered for election in the Caucus

@@ -322,26 +322,24 @@ defmodule VoteLeader do
   defstruct [:pid]
   # initialize the VoteLeader
   # Region PID PID PID -> PID
-  def spawn(region, candidate_registry, voter_registry, auditor, region_manager, deadline_time) do
+  def spawn(region, candidate_registry, auditor, region_manager, deadline_time) do
     spawn fn -> 
-      send voter_registry, {:voter_roll, self(), region}
-      region_voters = RegionVoters.receive()
       Process.sleep(deadline_time - :os.system_time(:millisecond))
       send Process.whereis(region), {:msg, self()}
-      setup_voting(MapSet.new(), region_voters, MapSet.new(), candidate_registry, auditor, region_manager)
+      setup_voting(MapSet.new(), MapSet.new(), candidate_registry, auditor, region_manager)
     end
   end
 
   # Query for any prerequisite data for running a round of voting
   # [Setof Voter] PID -> void
-  defp setup_voting(voters, region_voters, blacklist, candidate_registry, auditor, region_manager) do
+  defp setup_voting(voters, blacklist, candidate_registry, auditor, region_manager) do
     send candidate_registry, {:msg, self()}
-    prepare_voting(voters, region_voters, MapSet.new(), blacklist, candidate_registry, auditor, region_manager)
+    prepare_voting(voters, MapSet.new(), blacklist, candidate_registry, auditor, region_manager)
   end
 
   # Gather the information necessary to start voting and issue votes to voters
   # [Setof Voter] [Setof Candidate] PID -> void
-  defp prepare_voting(voters, region_voters, candidates, blacklist, candidate_registry, auditor, region_manager) do
+  defp prepare_voting(voters, candidates, blacklist, candidate_registry, auditor, region_manager) do
     if !(Enum.empty?(voters) || Enum.empty?(candidates)) do
       valid_candidates = MapSet.difference(candidates, blacklist)
       issue_votes(voters, valid_candidates)
@@ -349,7 +347,7 @@ defmodule VoteLeader do
       Process.send_after self(), :timeout, 1000
 
       vote_loop(
-        %VoterData{voters: voters, region_voters: region_voters, lookup: voter_lookup, votes: MapSet.new()},
+        %VoterData{voters: voters, lookup: voter_lookup, votes: MapSet.new()},
         %CandData{
           cands: valid_candidates, 
           lookup: Enum.reduce(valid_candidates, %{}, fn cand, acc -> Map.put(acc, cand.name, cand) end), 
@@ -367,11 +365,11 @@ defmodule VoteLeader do
           send auditor, {:audit_voters, self(), MapSet.new(Enum.map(new_voters, fn %VoterStruct{name: name, pid: _} -> name end))}
           receive do
             {:invalidated_voters, invalid_voters} ->
-              prepare_voting(MapSet.new(Enum.filter(new_voters, fn %VoterStruct{name: name, pid: _} -> not MapSet.member?(invalid_voters, name) end)), region_voters, candidates, blacklist, candidate_registry, auditor, region_manager)
+              prepare_voting(MapSet.new(Enum.filter(new_voters, fn %VoterStruct{name: name, pid: _} -> not MapSet.member?(invalid_voters, name) end)), candidates, blacklist, candidate_registry, auditor, region_manager)
           end
         %AbstractRegistry{values: new_candidates, type: CandStruct} ->
           IO.puts "Vote Leader received candidates! #{inspect new_candidates}"
-          prepare_voting(voters, region_voters, new_candidates, blacklist, candidate_registry, auditor, region_manager)
+          prepare_voting(voters, new_candidates, blacklist, candidate_registry, auditor, region_manager)
       end
     end
   end
@@ -429,7 +427,7 @@ defmodule VoteLeader do
       send losing_pid, :loser
       IO.puts "Our loser is #{loser}!"
 
-      setup_voting(confirmed_voters, voter_data.region_voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, auditor, region_manager)
+      setup_voting(confirmed_voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, auditor, region_manager)
     end
   end
 end
@@ -477,7 +475,7 @@ defmodule RegionManager do
       :deadline ->
         for region <- regions do
           auditor = Auditor.spawn(region, voter_registry)
-          VoteLeader.spawn(region, candidate_registry, voter_registry, auditor, self(), deadline_time)
+          VoteLeader.spawn(region, candidate_registry, auditor, self(), deadline_time)
         end
     end
   end
