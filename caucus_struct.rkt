@@ -105,6 +105,20 @@
 ;; a certain round by making a Vote assertion with the corresponding round ID,
 ;; their name, and the name of the candidate they are voting for.
 
+;; There is a conversation about auditing:
+;; Each region contains an Auditor who presides over the caucus and highlights any suspicious
+;; or illegal activity in the voting process.
+;; The Auditor determines the voters registered to vote in a region by expressing interest in
+;; a VoterRoll assertion, which contains a list of Names of registered voters.
+;; Upon doors closing in a caucus, Vote Leaders express interest in a VoterVerification
+;; assertion containing the Vote Leader's region, the Vote Leader's list of all participating
+;; voters, and a list of all voters deemed invalid. The Auditor responds with the anticipated
+;; assertion.
+;; Similarly, after a round of voting, Vote Leaders express interest in a VoteVerification assertion,
+;; containing the Leader's region, the ID of the current round of voting, the Leader's list of
+;; received votes, and a list of all votes deemed invalid. The Auditor responds with the anticipated
+;; assertion.
+
 ;; There is a conversation about the winner for a region.
 ;; A Vote Leader declares the winner for their region with an Elected assertion including
 ;; the name of the candidate and the name of the region the elected candidate won. The Region

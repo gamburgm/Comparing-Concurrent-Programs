@@ -38,6 +38,12 @@
 # a Message is a {:msg, PID}
 # a Remove is a {:remove, PID}
 #
+# Messages regarding Auditing:
+# an AuditVoters is an {:audit_voters, PID, [Set-of Name]}
+# an InvalidatedVoters is an {:invalidated_voters, [Set-of Name]}
+# an AuditBallots is an {:audit_ballots, PID, [Set-of Name], [Set-of Name]}
+# an InvalidatedBallots is an {:invalidated_ballots, [Set-of Name]}
+#
 # a VotingStrategy is a Module with a function that contains a `vote` function with the signature:
 #   Name [Setof Candidate] [Setof Candidate] PID ([Setof Candidate] -> [Setof Candidate]) -> void
 #
@@ -76,6 +82,29 @@
 # reply with a Vote message containing their name and the name of the Candidate they would like to vote for. If > 50% of voters vote
 # for one candidate, then that candidate wins the region. Otherwise, the candidate with the fewest votes is removed from the set
 # of eligible candidates and a new Ballot with one fewer candidate is sent to voters in a new round of voting.
+#
+# There is a conversation about auditing:
+# Each region contains an Auditor that is responsible for alerting the Vote Leader in the Auditor's region
+# about suspicious or illegal activity that occurs during the caucus.
+# The Auditor sends a VoterRoll message to the Voter Registry and waits for a VoterRegistry message containing the 
+# voters registered to vote in the Auditor's region.
+# The Vote Leader in the Auditor's region verifies the voters in their region by sending an AuditVoters message with
+# the set of voters requesting to participate in the region's Caucus. The Auditor responds with an InvalidatedVoters
+# message containing the set of participants that should be barred from participating (i.e. aren't registered to vote there).
+# At the end of a round of voting, the Vote Leader sends the Auditor an AuditBallots message, containing the set of
+# votes received, to determine which votes should not be processed. The Auditor responds with an InvalidatedBallots message,
+# containing the set of all votes that violate a rule of the voting process.
+#
+# In order for a ballot to be counted and not be tossed out, all of the following must be true:
+# - The voter must be registered to vote in the region that the ballot was received in
+# - The voter must be participating in the vote managed by the vote leader
+# - The voter must only submit one ballot total (if more are submitted, all ballots are thrown out)
+# - The voter must be voting for a candidate that is still in the race
+# - The voter must not have violated any of these rules at any prior vote during this caucus
+#
+# The auditor is responsible for alerting the Vote Leader in the auditor's region about suspicious or illegal activity
+# that occurs in the duration of the caucus.
+#
 
 # a CandData is a %CandData{cands: [Setof CandStruct], lookup: [Mapof Name -> CandStruct], blacklist: [Setof CandStruct]}
 # CandData represents the status of Candidates during a Vote
