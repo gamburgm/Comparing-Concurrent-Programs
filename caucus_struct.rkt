@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail voter-verification vote-verification)
+(provide ballot participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail voter-verification vote-verification)
 
 ;; a Name is a (caucus-unique) String
 
@@ -15,6 +15,9 @@
 ;; a Region is a (caucus-unique) String
 
 ;; a Time is a Number (number of milliseconds in Unix time)
+
+;; a Ballot is a (ballot Name Name)
+(assertion-struct ballot (voter cand))
 
 ;; a Participating is a (participating Name Region)
 (assertion-struct participating (name region))
@@ -71,6 +74,8 @@
 ;; a VoteVerification is a (vote-verification Region ID [Set-of Name] [Set-of [Pair Name Name]] [Set-of [Pair Name Name]])
 (assertion-struct vote-verification (region round candidates votes invalid))
 
+;; NOTE create a `Ballot` struct
+
 ;; There are five actor roles:
 ;; - Caucus Leaders
 ;; - Candidates
@@ -105,6 +110,8 @@
 ;; a certain round by making a Vote assertion with the corresponding round ID,
 ;; their name, and the name of the candidate they are voting for.
 
+;; NOTE shouldn't mention the Vote Leader. There's an Auditor and somebody who wants something audited.
+;; NOTE should be sets, not lists
 ;; There is a conversation about auditing:
 ;; Each region contains an Auditor who presides over the caucus and highlights any suspicious
 ;; or illegal activity in the voting process.
@@ -114,6 +121,7 @@
 ;; assertion containing the Vote Leader's region, the Vote Leader's list of all participating
 ;; voters, and a list of all voters deemed invalid. The Auditor responds with the anticipated
 ;; assertion.
+;; NOTE unclear which parts of the request are provided by the Vote Leader and which parts is it pattern-matching
 ;; Similarly, after a round of voting, Vote Leaders express interest in a VoteVerification assertion,
 ;; containing the Leader's region, the ID of the current round of voting, the Leader's list of
 ;; received votes, and a list of all votes deemed invalid. The Auditor responds with the anticipated

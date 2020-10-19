@@ -114,27 +114,22 @@
 (define (spawn-leader region participation-deadline)
   (spawn
     (printf "The Vote Leader for region ~a has joined the event!\n" region)
-    (field [validated-voters (set)])
-
     (define/query-set voters (participating $name region) name)
     (define/query-set candidates (candidate $name _) name)
 
     (assert (doors-opened (current-inexact-milliseconds) region))
     (assert (doors-close participation-deadline region))
 
-    (on (asserted (voter-verification region (voters) $invalid-voters))
-        (validated-voters (set-subtract (voters) invalid-voters)))
-
     ;; [Listof Name] -> Elected
-    (define (run-round current-cands current-voters)
+    (define (run-round current-cands)
       (printf "still in the running: ~a\n" current-cands)
       (define round-id (gensym 'round))
       (react
-        (field [valid-voters current-voters]
-               [still-in-the-running current-cands]
-               [valid-ballots (set)])
+        (field [still-in-the-running current-cands]
+               [submitted-ballots '()])
 
-        (define/query-set submitted-ballots (vote $who round-id region $for) (cons who for))
+        (on (asserted (vote $who round-id region $for))
+            (submitted-ballots (cons (ballot who for) (submitted-ballots))))
 
         (printf "Candidates still in the running in ~a for region ~a: ~a\n" round-id region (still-in-the-running))
         (assert (round round-id region (set->list (still-in-the-running))))
@@ -144,59 +139,61 @@
             (when (set-member? (still-in-the-running) name)
               (still-in-the-running (set-remove (still-in-the-running) name))))
 
-        (on (asserted (vote-verification region round-id (still-in-the-running) (submitted-ballots) $invalid-ballots))
-            (valid-ballots (set-subtract (submitted-ballots) invalid-ballots)))
-
         (on-start
           (react
             (define one-sec-from-now (get-one-second-from-now))
 
             (on (asserted (later-than one-sec-from-now))
                 (printf "Timeout reached on this round!\n")
-                (valid-voters
-                  (for/fold ([voted (set)])
-                            ([vote (valid-ballots)])
-                    (set-add voted (car vote)))))))
+                (stop-current-facet (count-votes round-id (still-in-the-running) (submitted-ballots))))))))
 
-        (begin/dataflow
+    ;; TODO better name, and should round-id be passed as an argument?
+    (define (count-votes round-id cands ballots)
+      (react
+        (on (asserted (vote-verification region round-id cands ballots $invalid-ballots))
+
+          (define valid-ballots (filter (λ (b) (not (set-member? invalid-ballots b))) ballots))
+          (define num-votes (length valid-ballots))
           (define votes
             (for/fold ([votes (hash)])
-                      ([vote (valid-ballots)])
-              (match-define (cons voter cand) vote)
+                      ([vote valid-ballots])
+              (match-define (ballot voter cand) vote)
               (hash-update votes cand add1 0)))
 
-          (define num-voters (set-count (valid-voters)))
-          (define num-voted (for/sum ([votes (in-hash-values votes)])
-                              votes))
+          (printf "Tallying has begun for ~a in region ~a!\n" round-id region)
+          (define front-runner (argmax (lambda (n) (hash-ref votes n 0))
+                                      (set->list cands)))
+          (define their-votes (hash-ref votes front-runner 0))
+          ;; ASSUME: we're OK running a final round with just a single candidate
+          (cond
+            [(> their-votes (/ num-votes 2))
+            (printf "Candidate ~a has been elected in region ~a at round ~a!\n" front-runner region round-id)
+            (stop-current-facet
+              (react
+                (assert (elected front-runner region))))]
+            [else
+              (for ([candidate (in-set (candidates))])
+                (send! (tally candidate region (hash-ref votes candidate 0))))
 
-          (when (= num-voters num-voted)
-            (printf "Tallying has begun for ~a in region ~a!\n" round-id region)
-            (define front-runner (argmax (lambda (n) (hash-ref votes n 0))
-                                        (set->list (still-in-the-running))))
-            (define their-votes (hash-ref votes front-runner 0))
-            ;; ASSUME: we're OK running a final round with just a single candidate
-            (cond
-              [(> their-votes (/ num-voters 2))
-              (printf "Candidate ~a has been elected in region ~a at round ~a!\n" front-runner region round-id)
-              (stop-current-facet
-                (react
-                  (assert (elected front-runner region))))]
-              [else
-                (for ([candidate (in-set (candidates))])
-                  (send! (tally candidate region (hash-ref votes candidate 0))))
+              (define loser (argmin (lambda (n) (hash-ref votes n 0))
+                                  (set->list cands)))
+              (printf "The front-runner for ~a in region ~a is ~a! The loser is ~a!\n" round-id region front-runner loser)
+              ;; NOTE this should be fixed in master
+              (define next-candidates (set-intersect (candidates) (set-remove cands loser)))
+              (stop-current-facet (run-round next-candidates))]))))
 
-                (define loser (argmin (lambda (n) (hash-ref votes n 0))
-                                    (set->list (still-in-the-running))))
-                (printf "The front-runner for ~a in region ~a is ~a! The loser is ~a!\n" round-id region front-runner loser)
-                (define next-candidates (set-intersect (candidates) (set-remove (still-in-the-running) loser)))
-                (stop-current-facet (run-round next-candidates (valid-voters)))])))))
+    ;; FIXME is it weird that voters don't need to be kept track of?
+    (define (prepare-voting candidates voters)
+      (react
+        (on (asserted (voter-verification region voters _))
+            (stop-current-facet (run-round candidates)))))
 
     (on-start
       (react
         (on (asserted (later-than participation-deadline))
             ;; ASSUME: at least one candidate and voter at this point
             (printf "The race has begun in region ~a!\n" region)
-            (stop-current-facet (run-round (candidates) (validated-voters))))))))
+            (stop-current-facet (prepare-voting (candidates) (voters))))))))
 
 (define (spawn-voter-registry deadline valid-regions)
   (spawn
@@ -257,7 +254,10 @@
       (voter-blacklist (set-subtract voters (registered-voters)))
       (assert (voter-verification region voters (voter-blacklist))))
 
+    ;; FIXME this code is bad, clean it up as best you can
     (during (observe (vote-verification region $round-id $cands $votes _))
+      ;; signature & purpose statement
+      ;; [Set-of [Pair Name Name]] [Set-of Name] [Hash-of Name Name] Name Name -> ([Set-of [Pair Name Name]] [Set-of Name] [Hash-of Name Name])
       (define (audit-ballot invalid-ballots blacklist valid-ballots voter cand)
         (cond
           [(and (set-member? (registered-voters) voter)
@@ -267,21 +267,21 @@
                 (set-member? cands cand))
             (values invalid-ballots blacklist (hash-set valid-ballots voter cand))]
           [(hash-has-key? valid-ballots voter)
-            (values (set-add (set-add invalid-ballots (cons voter cand)) (cons voter (hash-ref valid-ballots voter)))
+            (values (set-add (set-add invalid-ballots (ballot voter cand)) (ballot voter (hash-ref valid-ballots voter)))
                     (set-add blacklist voter)
                     (hash-remove valid-ballots voter))]
           [else
-            (values (set-add invalid-ballots (cons voter cand)) (set-add blacklist voter) valid-ballots)]))
+            (values (set-add invalid-ballots (ballot voter cand)) (set-add blacklist voter) valid-ballots)]))
 
-      (define-values (invalid-ballots new-blacklist _valid)
+      (define-values (invalid-ballots new-blacklist valid)
         (for/fold ([invalid-ballots (set)]
                    [new-blacklist (voter-blacklist)]
                    [valid-ballots (hash)])
                   ([vote votes])
-          (match-define (cons voter cand) vote)
-          (voter-blacklist new-blacklist)
+          (match-define (ballot voter cand) vote)
           (audit-ballot invalid-ballots new-blacklist valid-ballots voter cand)))
 
+      (voter-blacklist (set-subtract (registered-voters) (list->set (hash-keys valid))))
       (assert (vote-verification region round-id cands votes invalid-ballots)))))
 
 ;; Name -> [[Listof Candidate] -> [Listof Candidate]]
