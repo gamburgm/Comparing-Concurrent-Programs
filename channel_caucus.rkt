@@ -250,24 +250,21 @@
                  [voter-blacklist (set)])
 
         (define (get-invalid-ballots candidates ballots)
-          (define-values (invalid-ballots good-votes new-blacklist)
-            (for/fold ([invalid-ballots (set)]
-                       [seemingly-good-votes (hash)]
-                       [new-blacklist voter-blacklist])
-                      ([ballot ballots])
-              (match-define (cons voter candidate) ballot)
-              (cond
-                [(and (set-member? voters-in-region voter)
-                      (set-member? participating-voters voter)
-                      (not (set-member? new-blacklist voter))
-                      (not (hash-has-key? seemingly-good-votes voter))
-                      (set-member? candidates candidate))
-                 (values invalid-ballots (hash-set seemingly-good-votes voter candidate) new-blacklist)]
-                [(hash-has-key? seemingly-good-votes voter)
-                 (values (set-add (set-add invalid-ballots (cons voter (hash-ref seemingly-good-votes voter))) (cons voter candidate)) (hash-remove seemingly-good-votes voter) (set-add new-blacklist voter))]
-                [else (values (set-add invalid-ballots (cons voter candidate)) seemingly-good-votes (set-add new-blacklist voter))])))
-
-          (values invalid-ballots new-blacklist))
+          (for/fold ([invalid-ballots (set)]
+                      [seemingly-good-votes (hash)]
+                      [new-blacklist voter-blacklist])
+                    ([vote ballots])
+            (match-define (ballot voter candidate) vote)
+            (cond
+              [(and (set-member? voters-in-region voter)
+                    (set-member? participating-voters voter)
+                    (not (set-member? new-blacklist voter))
+                    (not (hash-has-key? seemingly-good-votes voter))
+                    (set-member? candidates candidate))
+                (values invalid-ballots (hash-set seemingly-good-votes voter candidate) new-blacklist)]
+              [(hash-has-key? seemingly-good-votes voter)
+                (values (set-add (set-add invalid-ballots (ballot voter (hash-ref seemingly-good-votes voter))) (ballot voter candidate)) (hash-remove seemingly-good-votes voter) (set-add new-blacklist voter))]
+              [else (values (set-add invalid-ballots (ballot voter candidate)) seemingly-good-votes (set-add new-blacklist voter))])))
 
         (define audit-request (channel-get audit-chan))
         (match audit-request
@@ -276,9 +273,9 @@
            (channel-put recv-chan (invalidated-voters invalid-voters))
            (loop voters invalid-voters)]
           [(audit-ballots recv-chan candidates votes)
-           (define-values (invalid-ballots new-blacklist) (get-invalid-ballots candidates votes))
+           (define-values (invalid-ballots good-votes new-blacklist) (get-invalid-ballots candidates votes))
            (channel-put recv-chan (invalidated-ballots invalid-ballots))
-           (loop participating-voters new-blacklist)]))))
+           (loop participating-voters (set-subtract voters-in-region (list->set (hash-keys good-votes))))]))))
   audit-chan)
 
 (define (receive-region-roll voter-registry retrieve-voters-chan region)
@@ -354,7 +351,7 @@
 
         (define voter-lookup (create-voter-lookup voters))
 
-        (let voting-loop ([voting-record (set)])
+        (let voting-loop ([voting-record '()])
 
           ;; Determine winner if one candidate has received majority of votes, otherwise begin next round of voting
           ;; (Hashof Name -> Voter) (Hashof Name -> Name) (Hashof Name -> number) -> candidate msg to vote leader
@@ -363,11 +360,11 @@
             (define audit-payload (channel-get audited-votes-chan))
             (match audit-payload
               [(invalidated-ballots invalid-ballots)
-               (define valid-ballots (set-subtract voting-record invalid-ballots))
+               (define valid-ballots (filter (λ (b) (not (set-member? invalid-ballots b))) voting-record))
                (define votes
                  (for/fold ([votes (hash)])
-                           ([ballot valid-ballots])
-                   (match-define (cons voter cand) ballot)
+                           ([vote valid-ballots])
+                   (match-define (ballot voter cand) vote)
                    (hash-update votes cand add1 0)))
 
                (define front-runner (argmax (λ (cand) (hash-ref votes (candidate-name cand) 0)) (set->list candidates)))
@@ -392,7 +389,7 @@
           (define handle-vote
             (match-lambda
               [(vote name candidate)
-               (set-add voting-record (cons name candidate))]))
+               (cons (ballot name candidate) voting-record)]))
 
           (define vote-events
             (apply
@@ -410,7 +407,7 @@
               vote-timeout
               (λ (_)
                  (log-caucus-evt "Round of voting in region ~a is over!" region)
-                 (define already-voted (list->set (map car (set->list voting-record))))
+                 (define already-voted (list->set (map ballot-voter voting-record)))
                  (define new-voting-record
                    (for/fold ([voting-record voting-record])
                              ([(voter-name voting-chan) (in-hash voting-chan-table)])

@@ -1,6 +1,6 @@
 #lang racket
 
-(provide candidate candidate-name candidate-results-chan drop-out loser voter voter-name voter-voting-chan request-vote vote ballot-results all-candidates all-voters declare-winner publish withdraw subscribe message payload register change-reg unregister voter-roll registration-config register-evt audit-voters invalidated-voters audit-ballots invalidated-ballots get-evt-info evt-info REG-DEADLINE-NAME DOORS-CLOSE-NAME)
+(provide ballot ballot-voter candidate candidate-name candidate-results-chan drop-out loser voter voter-name voter-voting-chan request-vote vote ballot-results all-candidates all-voters declare-winner publish withdraw subscribe message payload register change-reg unregister voter-roll registration-config register-evt audit-voters invalidated-voters audit-ballots invalidated-ballots get-evt-info evt-info REG-DEADLINE-NAME DOORS-CLOSE-NAME)
 
 ;;;;;;; CONSTANTS ;;;;;;;
 (define REG-DEADLINE-NAME 'registration-deadline)
@@ -19,9 +19,10 @@
 
 ;; a Time is a number (milliseconds in Unix time)
 
-;; a Ballot s a (cons Name Name)
-
 ;; CandidateResults is (Union Loser BallotResults)
+
+;; a Ballot is a (ballot Name Name)
+(struct ballot (voter cand) #:transparent)
 
 ;; a Candidate is a (candidate Name Tax-Rate [Chanof CandidateResults])
 (struct candidate (name tax-rate results-chan) #:transparent)
