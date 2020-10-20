@@ -25,10 +25,10 @@
 
   (parameterize ([plot-x-tick-label-anchor 'top-right]
                  [plot-x-tick-label-angle  90]
-                 [plot-width 500]
+                 [plot-width 550]
                  [plot-x-ticks (create-x-ticks file-size)]
                  [plot-x-far-ticks no-ticks]
                  [plot-y-far-ticks no-ticks])
     (plot-file (rectangles change-rectangles) output-file #:title "Elixir Diff Visualized" #:x-label "Line of code" #:y-label "Number of lines inserted" #:x-min 1 #:x-max (+ file-size 1))))
 
-(plot-changes "input.txt" "elixir.jpeg" 501)
+(plot-changes "input.txt" "elixir.jpeg" 539)
