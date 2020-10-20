@@ -135,20 +135,18 @@ defmodule Auditor do
         blacklisted_participants = MapSet.difference(voters, region_voters)
         send pid, {:invalidated_voters, blacklisted_participants}
         loop(region_voters, MapSet.union(participating_voters, voters), MapSet.union(voter_blacklist, blacklisted_participants))
-      {:audit_ballots, pid, cands, voters} ->
-        {invalid_ballots, new_blacklist} = get_invalid_ballots(region_voters, participating_voters, voter_blacklist, cands, voters)
+      {:audit_ballots, pid, cands, votes} ->
+        {invalid_ballots, _new_blacklist, valid_ballots} = get_invalid_ballots(region_voters, participating_voters, voter_blacklist, cands, votes)
         send pid, {:invalidated_ballots, invalid_ballots}
-        loop(region_voters, participating_voters, new_blacklist)
+        loop(region_voters, participating_voters, MapSet.difference(region_voters, MapSet.new(Map.keys(valid_ballots))))
     end
   end
 
   defp get_invalid_ballots(region_voters, participating_voters, voter_blacklist, candidates, votes) do
-    {invalid_ballots, new_blacklist, _} = Enum.reduce(votes, {MapSet.new(), voter_blacklist, %{}},
-      fn {voter, cand}, {invalid_ballots, voter_blacklist, successful_ballots} -> 
+    Enum.reduce(votes, {MapSet.new(), voter_blacklist, %{}},
+      fn {:vote, voter, cand}, {invalid_ballots, voter_blacklist, successful_ballots} -> 
         audit_ballot(region_voters, participating_voters, voter_blacklist, successful_ballots, invalid_ballots, candidates, voter, cand)
       end)
-
-    {invalid_ballots, new_blacklist}
   end
 
   defp audit_ballot(region_voters, participating_voters, voter_blacklist, successful_ballots, invalid_ballots, candidates, voter, cand) do
@@ -347,7 +345,7 @@ defmodule VoteLeader do
       Process.send_after self(), :timeout, 1000
 
       vote_loop(
-        %VoterData{voters: voters, lookup: voter_lookup, votes: MapSet.new()},
+        %VoterData{voters: voters, lookup: voter_lookup, votes: []},
         %CandData{
           cands: valid_candidates, 
           lookup: Enum.reduce(valid_candidates, %{}, fn cand, acc -> Map.put(acc, cand.name, cand) end), 
@@ -387,11 +385,10 @@ defmodule VoteLeader do
     receive do
       :timeout ->
         audit_votes(voter_data, cand_data, cand_registry, auditor, region_manager)
-      {:vote, voter_name, cand_name} ->
+      vote = {:vote, voter_name, cand_name} ->
         IO.puts "Voter #{inspect voter_name} is voting for candidate #{inspect cand_name}!"
-        new_voting_record = MapSet.put(voter_data.votes, {voter_name, cand_name})
         vote_loop(
-          %{voter_data | votes: new_voting_record},
+          %{voter_data | votes: [vote | voter_data.votes]},
           cand_data,
           cand_registry,
           auditor,
@@ -404,7 +401,8 @@ defmodule VoteLeader do
     send auditor, {:audit_ballots, self(), MapSet.new(Enum.map(cand_data.cands, fn %CandStruct{name: name, tax_rate: _, pid: _} -> name end)), voter_data.votes}
     receive do
       {:invalidated_ballots, invalid_ballots} ->
-        conclude_vote(%{voter_data | votes: MapSet.difference(voter_data.votes, invalid_ballots)}, cand_data, cand_registry, auditor, region_manager)
+        conclude_vote(%{voter_data | votes: Enum.filter(voter_data.votes, fn vote -> !MapSet.member?(invalid_ballots, vote) end)},
+          cand_data, cand_registry, auditor, region_manager)
     end
   end
 
@@ -412,9 +410,8 @@ defmodule VoteLeader do
   # VoterData CandData PID PID -> void
   defp conclude_vote(voter_data, cand_data, cand_registry, auditor, region_manager) do
     initial_tally = Enum.reduce(cand_data.cands, %{}, fn %CandStruct{name: cand_name, tax_rate: _, pid: _}, init -> Map.put(init, cand_name, 0) end)
-    tally = Enum.reduce(voter_data.votes, initial_tally, fn {_, cand_name}, curr_tally -> Map.update!(curr_tally, cand_name, &(&1 + 1)) end)
+    tally = Enum.reduce(voter_data.votes, initial_tally, fn {:vote, _, cand_name}, curr_tally -> Map.update!(curr_tally, cand_name, &(&1 + 1)) end)
 
-    confirmed_voters = Enum.reduce(voter_data.votes, MapSet.new, fn {voter_name, _}, acc -> MapSet.put(acc, voter_data.lookup[voter_name]) end)
     num_votes = Enum.reduce(tally, 0, fn {_, count}, acc -> acc + count end)
     {frontrunner, their_votes} = Enum.max(tally, fn {_, count1}, {_, count2} -> count1 >= count2 end)
     IO.puts "The frontrunner received #{their_votes} votes, out of #{num_votes} total votes"
@@ -427,7 +424,7 @@ defmodule VoteLeader do
       send losing_pid, :loser
       IO.puts "Our loser is #{loser}!"
 
-      setup_voting(confirmed_voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, auditor, region_manager)
+      setup_voting(voter_data.voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, auditor, region_manager)
     end
   end
 end
