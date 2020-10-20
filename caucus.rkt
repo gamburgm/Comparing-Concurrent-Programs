@@ -131,6 +131,9 @@
         (on (asserted (vote $who round-id region $for))
             (submitted-ballots (cons (ballot who for) (submitted-ballots))))
 
+        (on (retracted (vote $who round-id region $for))
+            (submitted-ballots (remove (ballot who for) (submitted-ballots))))
+
         (printf "Candidates still in the running in ~a for region ~a: ~a\n" round-id region (still-in-the-running))
         (assert (round round-id region (set->list (still-in-the-running))))
 
@@ -147,7 +150,7 @@
                 (printf "Timeout reached on this round!\n")
                 (stop-current-facet (count-votes round-id (still-in-the-running) (submitted-ballots))))))))
 
-    ;; TODO better name, and should round-id be passed as an argument?
+    ;; ID [List-of Name] [List-of Ballot] -> Elected
     (define (count-votes round-id cands ballots)
       (react
         (on (asserted (vote-verification region round-id cands ballots $invalid-ballots))
@@ -178,11 +181,10 @@
               (define loser (argmin (lambda (n) (hash-ref votes n 0))
                                   (set->list cands)))
               (printf "The front-runner for ~a in region ~a is ~a! The loser is ~a!\n" round-id region front-runner loser)
-              ;; NOTE this should be fixed in master
               (define next-candidates (set-intersect (candidates) (set-remove cands loser)))
               (stop-current-facet (run-round next-candidates))]))))
 
-    ;; FIXME is it weird that voters don't need to be kept track of?
+    ;; [List-of Name] [List-of Name]
     (define (prepare-voting candidates voters)
       (react
         (on (asserted (voter-verification region voters _))
@@ -256,8 +258,8 @@
 
     ;; FIXME this code is bad, clean it up as best you can
     (during (observe (vote-verification region $round-id $cands $votes _))
-      ;; signature & purpose statement
-      ;; [Set-of [Pair Name Name]] [Set-of Name] [Hash-of Name Name] Name Name -> ([Set-of [Pair Name Name]] [Set-of Name] [Hash-of Name Name])
+      ;; Determine the validity of a submitted ballot and update state accordingly
+      ;; [Set-of [Ballot Name Name]] [Set-of Name] [Hash-of Name Name] Name Name -> ([Set-of [Ballot Name Name]] [Set-of Name] [Hash-of Name Name])
       (define (audit-ballot invalid-ballots blacklist valid-ballots voter cand)
         (cond
           [(and (set-member? (registered-voters) voter)
