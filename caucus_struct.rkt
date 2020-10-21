@@ -105,22 +105,20 @@
 ;; a certain round by making a Vote assertion with the corresponding round ID,
 ;; their name, and the name of the candidate they are voting for.
 
-;; NOTE shouldn't mention the Vote Leader. There's an Auditor and somebody who wants something audited.
-;; NOTE should be sets, not lists
 ;; There is a conversation about auditing:
-;; Each region contains an Auditor who presides over the caucus and highlights any suspicious
-;; or illegal activity in the voting process.
-;; The Auditor determines the voters registered to vote in a region by expressing interest in
-;; a VoterRoll assertion, which contains a list of Names of registered voters.
-;; Upon doors closing in a caucus, Vote Leaders express interest in a VoterVerification
-;; assertion containing the Vote Leader's region, the Vote Leader's list of all participating
-;; voters, and a list of all voters deemed invalid. The Auditor responds with the anticipated
-;; assertion.
-;; NOTE unclear which parts of the request are provided by the Vote Leader and which parts is it pattern-matching
-;; Similarly, after a round of voting, Vote Leaders express interest in a VoteVerification assertion,
-;; containing the Leader's region, the ID of the current round of voting, the Leader's list of
-;; received votes, and a list of all votes deemed invalid. The Auditor responds with the anticipated
-;; assertion.
+;; There is an Auditor who validates the votes it receives, and a Client that receives validated votes
+;; from the Auditor.
+;; Upon a round of voting starting in the Auditor's region via a Round assertion, the Auditor makes
+;; a ValidVotes assertion, containing the Auditor's Region, the ID of the round of voting, and a
+;; List of Ballots that have passed the Auditor's inspection.
+;; Each region contains an Auditor, and the client is the region's Vote Leader.
+
+;; A Ballot is valid if all of the following are true:
+;; 1. The voter is registered to vote in the region the ballot was received in
+;; 2. The voter is participating in the vote managed by the vote leader
+;; 3. The voter only submits one ballot per round (and if multiple ballots were submitted, all are thrown out)
+;; 4. The voter votes for a candidate still in the race in that region
+;; 5. The voter has not violated any of the above in any previous round
 
 ;; There is a conversation about the winner for a region.
 ;; A Vote Leader declares the winner for their region with an Elected assertion including

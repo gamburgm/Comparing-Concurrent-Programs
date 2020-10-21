@@ -150,13 +150,12 @@
 ;; Voter Registry replies with a Payload message with the requested voters.
 ;;
 ;; Auditing Conversations
-;; NOTE don't mention vote leader
-;; Each region contains an Auditor that communicates with the Vote Leader to flag suspicious or illegal activity during the caucus.
-;; Vote Leaders validate all voters wishing to participate by sending an AuditVoters message to the Auditor containing a set of
-;; names. The Auditor responds with an InvalidatedVoters message which contains the participating voters not registered in that region.
-;; Vote Leaders determine which Ballots have violated the rules of the caucus by sending the Ballots to the Auditor in an AuditBallots
-;; message, along with the candidates still in the running in that region. The Auditor responds with an InvalidBallots message containing
-;; the set of Ballots that have violated the rules of the caucus.
+;; An Auditor communicates with a Client about invalid voters or ballots that the Client needs examined.
+;; Clients send an AuditVoters message to the Auditor containing a set of Names. The Auditor responds with an InvalidatedVoters
+;; message containing the set of Names of voters not registered to vote in that region.
+;; Clients send the Auditor an AuditBallots message, containing the candidates still in the race in that region and a list of Ballots.
+;; The Auditor responds with an InvalidBallots message containing the set of Ballots that have violated the voting rules.
+;; Each region contains an Auditor, where the Client is the Vote Leader of that region.
 ;;
 ;; A Ballot is only valid if all of the following are true:
 ;; - The voter is registered in the region the ballot was received in

@@ -84,15 +84,12 @@
 # of eligible candidates and a new Ballot with one fewer candidate is sent to voters in a new round of voting.
 #
 # There is a conversation about auditing:
-# NOTE vote leader is not a part of the conversation
-# Each region contains an Auditor that is responsible for alerting the Vote Leader in the Auditor's region
-# about suspicious or illegal activity that occurs during the caucus.
-# The Vote Leader in the Auditor's region verifies the voters in their region by sending an AuditVoters message with
-# the set of voters requesting to participate in the region's Caucus. The Auditor responds with an InvalidatedVoters
-# message containing the set of participants that should be barred from participating (i.e. aren't registered to vote there).
-# At the end of a round of voting, the Vote Leader sends the Auditor an AuditBallots message, containing the set of
-# votes received, to determine which votes should not be processed. The Auditor responds with an InvalidatedBallots message,
-# containing the set of all votes that violate a rule of the voting process.
+# There is an Auditor that alerts a Client to invalid Voters or Votes the Client asks it to validate.
+# The Client sends an AuditVoters message containing a set of Names representing voters. The Auditor responds with an
+# InvalidatedVoters message containing the set of Names of voters not registered to vote in that region.
+# The Client sends the Auditor an AuditBallots message containing a set of Ballots, and the Auditor responds with an
+# InvalidatedBallots message containing the set of all Ballots that violate a rule in the voting process.
+# Each region contains an Auditor where the Client is the region's Vote Leader.
 #
 # In order for a ballot to be counted and not be tossed out, all of the following must be true:
 # - The voter must be registered to vote in the region that the ballot was received in
