@@ -108,7 +108,7 @@
 ;; an AuditBallots is an (audit-ballots [Chan-of InvalidatedBallots] [Set-of Name] [List-of Ballot])
 (struct audit-ballots (recv-chan candidates votes) #:transparent)
 
-;; an InvalidatedBallots is an (invalidated-ballots [List-of Ballot])
+;; an InvalidatedBallots is an (invalidated-ballots [Set-of Ballot])
 (struct invalidated-ballots (invalid-ballots) #:transparent)
 
 ;;;; ENTITIES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
@@ -150,6 +150,7 @@
 ;; Voter Registry replies with a Payload message with the requested voters.
 ;;
 ;; Auditing Conversations
+;; NOTE don't mention vote leader
 ;; Each region contains an Auditor that communicates with the Vote Leader to flag suspicious or illegal activity during the caucus.
 ;; Vote Leaders validate all voters wishing to participate by sending an AuditVoters message to the Auditor containing a set of
 ;; names. The Auditor responds with an InvalidatedVoters message which contains the participating voters not registered in that region.

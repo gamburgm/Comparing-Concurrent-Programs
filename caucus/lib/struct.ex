@@ -84,10 +84,9 @@
 # of eligible candidates and a new Ballot with one fewer candidate is sent to voters in a new round of voting.
 #
 # There is a conversation about auditing:
+# NOTE vote leader is not a part of the conversation
 # Each region contains an Auditor that is responsible for alerting the Vote Leader in the Auditor's region
 # about suspicious or illegal activity that occurs during the caucus.
-# The Auditor sends a VoterRoll message to the Voter Registry and waits for a VoterRegistry message containing the 
-# voters registered to vote in the Auditor's region.
 # The Vote Leader in the Auditor's region verifies the voters in their region by sending an AuditVoters message with
 # the set of voters requesting to participate in the region's Caucus. The Auditor responds with an InvalidatedVoters
 # message containing the set of participants that should be barred from participating (i.e. aren't registered to vote there).
