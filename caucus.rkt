@@ -120,11 +120,12 @@
     (assert (doors-close participation-deadline region))
 
     ;; [Listof Name] -> Elected
-    (define (run-round current-cands)
+    (define (run-round voters current-cands)
       (printf "still in the running: ~a\n" current-cands)
       (define round-id (gensym 'round))
       (react
         (field [still-in-the-running current-cands])
+        (define/query-set have-voted (vote $who round-id region _) who)
 
         (printf "Candidates still in the running in ~a for region ~a: ~a\n" round-id region (still-in-the-running))
         (assert (round round-id region (set->list (still-in-the-running))))
@@ -133,6 +134,10 @@
             (printf "Candidate ~a in region ~a is now invalid!\n" name region)
             (when (set-member? (still-in-the-running) name)
               (still-in-the-running (set-remove (still-in-the-running) name))))
+
+        (begin/dataflow
+          (when (set-empty? (set-subtract voters (have-voted)))
+            (stop-current-facet (count-votes round-id (still-in-the-running)))))
 
         (on-start
           (react
@@ -172,14 +177,21 @@
                                   (set->list cands)))
               (printf "The front-runner for ~a in region ~a is ~a! The loser is ~a!\n" round-id region front-runner loser)
               (define next-candidates (set-intersect (candidates) (set-remove cands loser)))
-              (stop-current-facet (run-round next-candidates))]))))
+              (define valid-voter-names
+                (for/set ([b valid-ballots]) (ballot-voter b)))
+              (stop-current-facet (run-round valid-voter-names next-candidates))]))))
+
+    (define (prepare-voting candidates)
+      (react
+        (on (asserted (valid-voters region $voters))
+            (stop-current-facet (run-round voters candidates)))))
 
     (on-start
       (react
         (on (asserted (later-than participation-deadline))
             ;; ASSUME: at least one candidate and voter at this point
             (printf "The race has begun in region ~a!\n" region)
-            (stop-current-facet (run-round (candidates))))))))
+            (stop-current-facet (prepare-voting (candidates))))))))
 
 (define (spawn-voter-registry deadline valid-regions)
   (spawn
@@ -234,7 +246,7 @@
 
     (on (asserted (voter-roll region $voters))
         (registered-voters voters)
-        (voter-blacklist 
+        (voter-blacklist
           (for/set ([voter (participating-voters)]
                     #:when (not (set-member? (registered-voters) voter)))
             voter)))
@@ -243,6 +255,10 @@
         (participating-voters (set-add (participating-voters) name))
         (unless (set-member? (registered-voters) name)
           (voter-blacklist (set-add (voter-blacklist) name))))
+
+    (during (observe (valid-voters region _))
+            (printf "Valid voters in region ~a: ~a\n" region (set-subtract (participating-voters) (voter-blacklist)))
+            (assert (valid-voters region (set-subtract (participating-voters) (voter-blacklist)))))
 
     (during (round $id region $round-candidates)
       (field [valid-ballots '()])
@@ -265,7 +281,9 @@
            (filter (λ (b) (not (string=? voter (ballot-voter b)))) (valid-ballots))]
           [else (valid-ballots)]))
 
-      (assert (valid-votes id region (valid-ballots)))
+      (during (observe (valid-votes id region _))
+              (voter-blacklist (set-subtract (registered-voters) (for/set ([b (valid-ballots)]) (ballot-voter b))))
+              (assert (valid-votes id region (valid-ballots))))
 
       (on (asserted (vote $who id region $for))
           (valid-ballots (audit-ballot who for)))

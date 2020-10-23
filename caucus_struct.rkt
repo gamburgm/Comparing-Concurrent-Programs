@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide ballot ballot-voter participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail valid-votes)
+(provide ballot ballot-voter participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail valid-voters valid-votes no-result continuing-round decisive-round)
 
 ;; a Name is a (caucus-unique) String
 
@@ -68,8 +68,25 @@
 ;; a RegistrationFailure is a (reg-fail Name)
 (assertion-struct reg-fail (name))
 
-;; an InvalidVotes is an (invalid-votes ID Region [List-of Ballot])
+;; a ValidVoters is a (valid-voters Region [Set-of Name])
+(assertion-struct valid-voters (region names))
+
+;; a ValidVotes is a (valid-votes ID Region [List-of Ballot])
 (assertion-struct valid-votes (round-id region ballots))
+
+;; a RoundResult is one of:
+;; - a NoResult
+;; - a ContinuingRound
+;; - a DecisiveRound
+
+;; a NoResult is a (no-result)
+(assertion-struct no-result ())
+
+;; a ContinuingRound is a (continuing-round Name)
+(assertion-struct continuing-round (loser))
+
+;; a DecisiveRound is a (decisive-round Name)
+(assertion-struct decisive-round (elected))
 
 ;; There are five actor roles:
 ;; - Caucus Leaders
@@ -106,14 +123,15 @@
 ;; their name, and the name of the candidate they are voting for.
 
 ;; There is a conversation about auditing:
-;; There is an Auditor who validates the votes it receives, and a Client that receives validated votes
-;; from the Auditor.
-;; Upon a round of voting starting in the Auditor's region via a Round assertion, the Auditor makes
-;; a ValidVotes assertion, containing the Auditor's Region, the ID of the round of voting, and a
-;; List of Ballots that have passed the Auditor's inspection.
-;; Each region contains an Auditor, and the client is the region's Vote Leader.
+;; There is an Auditor in a region that notifies a Client of illegal activity by voters in that region.
+;; When doors close for participation in the vote in a Region, the Client expresses interest in a ValidVoters assertion,
+;; providing the region and expecting a set of Names of voters that are trying to participate but are not registered to vote
+;; in the region. The Auditor responds with the requested assertion.
+;; When a round of voting ends in a region, the Client in that region expresses interest in a ValidVotes assertion, providing
+;; the ID of the round and the Region, and expecting a List of Ballots that have passed the Auditor's inspection.
+;; In practice, the Client is the Vote Leader for the Region.
 
-;; A Ballot is valid if all of the following are true:
+;; A Ballot passes the Auditor's inspection if all of the following are true:
 ;; 1. The voter is registered to vote in the region the ballot was received in
 ;; 2. The voter is participating in the vote managed by the vote leader
 ;; 3. The voter only submits one ballot per round (and if multiple ballots were submitted, all are thrown out)

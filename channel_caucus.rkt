@@ -251,8 +251,8 @@
 
         (define (get-invalid-ballots candidates ballots)
           (for/fold ([invalid-ballots (set)]
-                      [seemingly-good-votes (hash)]
-                      [new-blacklist voter-blacklist])
+                     [seemingly-good-votes (hash)]
+                     [new-blacklist voter-blacklist])
                     ([vote ballots])
             (match-define (ballot voter candidate) vote)
             (cond
