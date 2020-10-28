@@ -125,7 +125,8 @@
       (define round-id (gensym 'round))
       (react
         (field [still-in-the-running current-cands])
-        (define/query-set have-voted (vote $who round-id region _) who)
+
+        (define round-runner-id (current-facet-id))
 
         (printf "Candidates still in the running in ~a for region ~a: ~a\n" round-id region (still-in-the-running))
         (assert (round round-id region (set->list (still-in-the-running))))
@@ -138,21 +139,19 @@
         (on-start
           (react
             (define/query-set have-voted (vote $who round-id region _) who)
+            (begin/dataflow
+              (when (set-empty? (set-subtract voters (have-voted)))
+                (stop-current-facet (count-votes round-id round-runner-id (still-in-the-running)))))
 
-        (begin/dataflow
-          (when (set-empty? (set-subtract voters (have-voted)))
-            (stop-current-facet (count-votes round-id (still-in-the-running)))))
-
-        (on-start
-          (react
-            (define one-sec-from-now (get-one-second-from-now))
-
-            (on (asserted (later-than one-sec-from-now))
-                (printf "Timeout reached on this round!\n")
-                (stop-current-facet (count-votes round-id (still-in-the-running))))))))
+            (on-start
+              (react
+                (define one-sec-from-now (get-one-second-from-now))
+                (on (asserted (later-than one-sec-from-now))
+                    (printf "Timeout reached on this round!\n")
+                    (stop-current-facet (count-votes round-id round-runner-id (still-in-the-running))))))))))
 
     ;; ID [List-of Name] -> Elected
-    (define (count-votes round-id cands)
+    (define (count-votes round-id round-runner-id cands)
       (react
         (on (asserted (valid-votes round-id region $valid-ballots))
           (define num-votes (length valid-ballots))
@@ -183,7 +182,7 @@
               (define next-candidates (set-intersect (candidates) (set-remove cands loser)))
               (define valid-voter-names
                 (for/set ([b valid-ballots]) (ballot-voter b)))
-              (stop-current-facet (run-round valid-voter-names next-candidates))]))))
+              (stop-current-facet (stop-facet round-runner-id (run-round valid-voter-names next-candidates)))]))))
 
     (define (prepare-voting candidates)
       (react

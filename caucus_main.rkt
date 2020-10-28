@@ -4,7 +4,7 @@
 (require/activate syndicate/drivers/timestate)
 
 ;; Region Manager
-(spawn-manager '("region5"))
+(spawn-manager '("region1" "region2" "region3" "region4" "region5"))
 
 ;; First Caucus: Region 1
 (spawn-voter "Rax" "region1" (stupid-sort "Tulsi"))

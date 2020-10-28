@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide ballot ballot-voter participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail valid-voters valid-votes no-result continuing-round decisive-round)
+(provide ballot ballot-voter participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail valid-voters valid-votes)
 
 ;; a Name is a (caucus-unique) String
 
@@ -88,11 +88,13 @@
 (assertion-struct not-participating-voter (name))
 
 ;; a MultipleVotes is a (multiple-votes Name [List-of Ballot])
+(assertion-struct multiple-votes (name ballots))
 
 ;; an IneligibleCandidate is an (ineligible-candidate Name Name)
 (assertion-struct ineligible-candidate (voter cand))
 
 ;; a BannedVoter is a (banned-voter Name InvalidBallot)
+(assertion-struct banned-voter (name vote))
 
 ;; There are five actor roles:
 ;; - Caucus Leaders
