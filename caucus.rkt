@@ -135,6 +135,10 @@
             (when (set-member? (still-in-the-running) name)
               (still-in-the-running (set-remove (still-in-the-running) name))))
 
+        (on-start
+          (react
+            (define/query-set have-voted (vote $who round-id region _) who)
+
         (begin/dataflow
           (when (set-empty? (set-subtract voters (have-voted)))
             (stop-current-facet (count-votes round-id (still-in-the-running)))))

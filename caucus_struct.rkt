@@ -74,19 +74,25 @@
 ;; a ValidVotes is a (valid-votes ID Region [List-of Ballot])
 (assertion-struct valid-votes (round-id region ballots))
 
-;; a RoundResult is one of:
-;; - a NoResult
-;; - a ContinuingRound
-;; - a DecisiveRound
+;; an InvalidBallot is one of:
+;; - UnregisteredVoter
+;; - NotParticipatingVoter
+;; - MultipleVotes
+;; - IneligibleCandidate
+;; - BannedVoter
 
-;; a NoResult is a (no-result)
-(assertion-struct no-result ())
+;; an UnregisteredVoter is an (unregistered-voter Name)
+(assertion-struct unregistered-voter (name))
 
-;; a ContinuingRound is a (continuing-round Name)
-(assertion-struct continuing-round (loser))
+;; a NotParticipatingVoter is a (not-participating-voter Name)
+(assertion-struct not-participating-voter (name))
 
-;; a DecisiveRound is a (decisive-round Name)
-(assertion-struct decisive-round (elected))
+;; a MultipleVotes is a (multiple-votes Name [List-of Ballot])
+
+;; an IneligibleCandidate is an (ineligible-candidate Name Name)
+(assertion-struct ineligible-candidate (voter cand))
+
+;; a BannedVoter is a (banned-voter Name InvalidBallot)
 
 ;; There are five actor roles:
 ;; - Caucus Leaders
@@ -127,7 +133,10 @@
 ;; When doors close for participation in the vote in a Region, the Client expresses interest in a ValidVoters assertion,
 ;; providing the region and expecting a set of Names of voters that are trying to participate but are not registered to vote
 ;; in the region. The Auditor responds with the requested assertion.
-;; When a round of voting ends in a region, the Client in that region expresses interest in a ValidVotes assertion, providing
+;; When the Client expresses interest in a ValidVotes assertion, ...
+;; the Auditor provides a List of the valid Ballots submitted during that round as if the round was ending.
+;
+;When a round of voting ends in a region, the Client in that region expresses interest in a ValidVotes assertion, providing
 ;; the ID of the round and the Region, and expecting a List of Ballots that have passed the Auditor's inspection.
 ;; In practice, the Client is the Vote Leader for the Region.
 
