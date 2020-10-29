@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide ballot ballot-voter participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail valid-voters valid-votes)
+(provide ballot ballot-voter participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail valid-voters audited-round valid-vote valid-vote? unregistered-voter not-participating-voter multiple-votes ineligible-candidate banned-voter)
 
 ;; a Name is a (caucus-unique) String
 
@@ -71,8 +71,15 @@
 ;; a ValidVoters is a (valid-voters Region [Set-of Name])
 (assertion-struct valid-voters (region names))
 
-;; a ValidVotes is a (valid-votes ID Region [List-of Ballot])
-(assertion-struct valid-votes (round-id region ballots))
+;; an AuditedRound is an (audited-round ID Region [List-of InvalidBallot])
+(assertion-struct audited-round (round-id region ballots))
+
+;; a ValidVote is a (valid-vote Name Name)
+(assertion-struct valid-vote (voter cand))
+
+;; an AuditedBallot is one of:
+;; - a ValidVote
+;; - an InvalidBallot
 
 ;; an InvalidBallot is one of:
 ;; - UnregisteredVoter
@@ -132,15 +139,19 @@
 
 ;; There is a conversation about auditing:
 ;; There is an Auditor in a region that notifies a Client of illegal activity by voters in that region.
+;; When doors close for participation in the vote in a Region, the Client expresses interest in ValidVoters assertion,
+;; providing the region and expecting a set of Names of voters that are trying 
+
+
+;; TODO best way of articulating the `Auditor replies as if...` idea?
+;; There is an Auditor in a region that notifies a Client of illegal activity by voters in that region.
 ;; When doors close for participation in the vote in a Region, the Client expresses interest in a ValidVoters assertion,
-;; providing the region and expecting a set of Names of voters that are trying to participate but are not registered to vote
-;; in the region. The Auditor responds with the requested assertion.
-;; When the Client expresses interest in a ValidVotes assertion, ...
-;; the Auditor provides a List of the valid Ballots submitted during that round as if the round was ending.
-;
-;When a round of voting ends in a region, the Client in that region expresses interest in a ValidVotes assertion, providing
-;; the ID of the round and the Region, and expecting a List of Ballots that have passed the Auditor's inspection.
-;; In practice, the Client is the Vote Leader for the Region.
+;; providing the region of the Auditor, and expecting a set of Names of voters that are both participating and registered
+;; to vote. The Auditor provides this information as if doors have closed for participation in the Auditor's region.
+;; When the Client expresses interest in an AuditedRound assertion, providing the region of the Auditor and the ID of a 
+;; round of voting and expecting a set of InvalidBallots, the Auditor responds with the expected assertion, as if the
+;; round of voting has ended.
+;; In practice, the Client is the Vote Leader for the Region, and there is one Auditor per region.
 
 ;; A Ballot passes the Auditor's inspection if all of the following are true:
 ;; 1. The voter is registered to vote in the region the ballot was received in

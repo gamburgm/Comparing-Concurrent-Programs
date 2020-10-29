@@ -139,21 +139,41 @@
         (on-start
           (react
             (define/query-set have-voted (vote $who round-id region _) who)
+            (define/query-set submitted-ballots (vote $who round-id region $for) (ballot who for))
+
+            (define (end-round)
+              (stop-current-facet (count-votes round-id round-runner-id (still-in-the-running) (submitted-ballots))))
+
             (begin/dataflow
               (when (set-empty? (set-subtract voters (have-voted)))
-                (stop-current-facet (count-votes round-id round-runner-id (still-in-the-running)))))
+                (end-round)))
 
             (on-start
               (react
                 (define one-sec-from-now (get-one-second-from-now))
                 (on (asserted (later-than one-sec-from-now))
                     (printf "Timeout reached on this round!\n")
-                    (stop-current-facet (count-votes round-id round-runner-id (still-in-the-running))))))))))
+                    (end-round))))))))
 
     ;; ID [List-of Name] -> Elected
-    (define (count-votes round-id round-runner-id cands)
+    (define (count-votes round-id round-runner-id cands ballots)
       (react
-        (on (asserted (valid-votes round-id region $valid-ballots))
+        (on (asserted (audited-round round-id region $invalid-ballots))
+          (define invalid-voters
+            (for/set ([b invalid-ballots])
+              (match b
+                [(or (unregistered-voter v)
+                     (not-participating-voter v)
+                     (multiple-votes v _)
+                     (ineligible-candidate v _)
+                     (banned-voter v _))
+                 v])))
+
+          (define valid-ballots
+            (for/list ([b ballots]
+                      #:when (not (set-member? invalid-voters (ballot-voter b))))
+                     b))
+
           (define num-votes (length valid-ballots))
           (define votes
             (for/fold ([votes (hash)])
@@ -264,35 +284,51 @@
             (assert (valid-voters region (set-subtract (participating-voters) (voter-blacklist)))))
 
     (during (round $id region $round-candidates)
-      (field [valid-ballots '()])
+      (field [audited-ballots (hash)])
 
       (define (already-voted? voter)
-        (ormap (λ (b) (string=? voter (ballot-voter b))) (valid-ballots)))
+        (hash-has-key? (audited-ballots) voter))
 
-      (define (valid-vote? voter cand)
-        (and (set-member? (registered-voters) voter)
-             (set-member? (participating-voters) voter)
-             (not (set-member? (voter-blacklist) voter))
-             (not (already-voted? voter))
-             (set-member? round-candidates cand)))
-
+      ;; Determine the status of the ballot to process
+      ;; Name Name -> AuditedBallot
       (define (audit-ballot voter cand)
         (cond
-          [(valid-vote? voter cand)
-           (cons (ballot voter cand) (valid-ballots))]
+          [(not (set-member? (registered-voters) voter))
+           (unregistered-voter voter)]
+          [(not (set-member? (participating-voters) voter))
+           (not-participating-voter voter)]
+          [(set-member? (voter-blacklist) voter)
+           (banned-voter voter)]
           [(already-voted? voter)
-           (filter (λ (b) (not (string=? voter (ballot-voter b)))) (valid-ballots))]
-          [else (valid-ballots)]))
+           (multiple-votes voter (list (ballot voter cand) (hash-ref (audited-ballots) voter)))]
+          [(not (set-member? round-candidates cand))
+           (ineligible-candidate voter cand)]
+          [else (valid-vote voter cand)]))
 
-      (during (observe (valid-votes id region _))
-              (voter-blacklist (set-subtract (registered-voters) (for/set ([b (valid-ballots)]) (ballot-voter b))))
-              (assert (valid-votes id region (valid-ballots))))
+      (define (update-blacklist voter audited-ballot blacklist)
+        (if (valid-vote? audited-ballot) blacklist (set-add voter blacklist)))
+
+      (define (update-audit voter audited-ballot audited-ballots)
+        (hash-set audited-ballots voter audited-ballot))
+
+      ;; FIXME a lot of mutation here, maybe we could do better?
+      (define (process-ballot voter cand)
+        (define audited-ballot (audit-ballot voter cand))
+        (audited-ballots (hash-set (audited-ballots) voter (audited-ballots)))
+        (voter-blacklist (update-blacklist voter audited-ballot (voter-blacklist))))
+
+      (during (observe (audited-round id region _))
+        (define invalid-ballots
+          (for/list ([b (in-hash-values (audited-ballots))]
+                    #:when (not (valid-vote? b)))
+            b))
+        (assert (audited-round id region invalid-ballots)))
 
       (on (asserted (vote $who id region $for))
-          (valid-ballots (audit-ballot who for)))
+          (audit-ballot who for))
 
       (on (retracted (vote $who id region $for))
-          (valid-ballots (remove (ballot who for) (valid-ballots)))))))
+          (audited-ballots (hash-remove (audited-ballots) who))))))
 
 ;; Name -> [[Listof Candidate] -> [Listof Candidate]]
 (define (stupid-sort cand-name)
