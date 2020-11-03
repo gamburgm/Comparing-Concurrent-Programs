@@ -49,12 +49,14 @@
 # - NotParticipatingVoter
 # - MultipleVotes
 # - IneligibleCandidate
+# - FailedToVote
 # - BannedVoter
 #
 # an UnregisteredVoter is an {:unregistered_voter, Name}
 # a NotParticipatingVoter is a {:not_participating_voter, Name}
 # a MultipleVotes is a {:multiple_votes, Name, [List-of Ballot]}
 # an IneligibleCandidate is an {:ineligible_cand, [Name of Voter], [Name of Candidate]}
+# a FailedToVote is a {:failed_to_vote, Name}
 # a BannedVoter is a {:banned_voter, Name, InvalidBallot}
 #
 # Messages regarding Auditing:
@@ -117,6 +119,7 @@
 # - The voter must be participating in the vote managed by the vote leader
 # - The voter must only submit one ballot total (if more are submitted, all ballots are thrown out)
 # - The voter must be voting for a candidate that is still in the race
+# - The voter has voted successfully in every round so far
 # - The voter must not have violated any of these rules at any prior vote during this caucus
 #
 # The auditor is responsible for alerting the Vote Leader in the auditor's region about suspicious or illegal activity
