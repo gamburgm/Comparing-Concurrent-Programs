@@ -124,8 +124,14 @@ defmodule Auditor do
   def spawn(region, voter_registry) do
     spawn fn -> 
       send voter_registry, {:voter_roll, self(), region}
-      registered_voters = RegionVoters.receive()
+      registered_voters = receive_region_voters()
       loop(registered_voters, MapSet.new(), MapSet.new())
+    end
+  end
+
+  defp receive_region_voters do
+    receive do
+      %VoterRegistry{voters: region_voters} -> region_voters
     end
   end
 
@@ -136,39 +142,50 @@ defmodule Auditor do
         send pid, {:invalidated_voters, blacklisted_participants}
         loop(region_voters, MapSet.union(participating_voters, voters), MapSet.union(voter_blacklist, blacklisted_participants))
       {:audit_ballots, pid, cands, votes} ->
-        {invalid_ballots, _new_blacklist, valid_ballots} = get_invalid_ballots(region_voters, participating_voters, voter_blacklist, cands, votes)
+        {audited_ballots, new_blacklist} = process_votes(region_voters, participating_voters, voter_blacklist, cands, votes)
+        invalid_ballots = Enum.filter(Map.values(audited_ballots), fn b -> invalid_vote?(b) end)
         send pid, {:invalidated_ballots, invalid_ballots}
-        loop(region_voters, participating_voters, MapSet.difference(region_voters, MapSet.new(Map.keys(valid_ballots))))
+        loop(region_voters, participating_voters, new_blacklist)
     end
   end
 
-  defp get_invalid_ballots(region_voters, participating_voters, voter_blacklist, candidates, votes) do
-    Enum.reduce(votes, {MapSet.new(), voter_blacklist, %{}},
-      fn {:vote, voter, cand}, {invalid_ballots, voter_blacklist, successful_ballots} -> 
-        audit_ballot(region_voters, participating_voters, voter_blacklist, successful_ballots, invalid_ballots, candidates, voter, cand)
+  defp invalid_vote?(audited_ballot) do
+    case audited_ballot do
+      {:valid_vote, _, _} -> false
+      _ -> true
+    end
+  end
+
+  defp process_votes(region_voters, participating_voters, voter_blacklist, candidates, votes) do
+    Enum.reduce(votes, {Map.new(), voter_blacklist},
+      fn {:vote, voter, cand}, {audited_votes, curr_blacklist} ->
+        process_ballot(region_voters, participating_voters, curr_blacklist, candidates, audited_votes, votes, voter, cand)
       end)
   end
 
-  defp audit_ballot(region_voters, participating_voters, voter_blacklist, successful_ballots, invalid_ballots, candidates, voter, cand) do
+  defp process_ballot(region_voters, participating_voters, blacklist, candidates, audited_votes, votes, voter, cand) do
+    audited_ballot = audit_ballot(region_voters, participating_voters, blacklist, candidates, audited_votes, votes, voter, cand)
+    {
+      Map.put(audited_votes, voter, audited_ballot),
+      update_blacklist(blacklist, voter, audited_ballot)
+    }
+  end
+
+  defp update_blacklist(blacklist, voter, ballot) do
+    case ballot do
+      {:valid_vote, _, _} -> blacklist
+      _ -> MapSet.put(blacklist, voter)
+    end
+  end
+
+  defp audit_ballot(region_voters, participating_voters, voter_blacklist, candidates, audited_votes, received_votes, voter, cand) do
     cond do
-      MapSet.member?(region_voters, voter)
-      and MapSet.member?(participating_voters, voter)
-      and not MapSet.member?(voter_blacklist, voter)
-      and not Map.has_key?(successful_ballots, voter)
-      and MapSet.member?(candidates, cand) ->
-        {invalid_ballots, voter_blacklist, Map.put(successful_ballots, voter, cand)}
-      Map.has_key?(successful_ballots, voter) ->
-        {
-          MapSet.put(MapSet.put(invalid_ballots, {voter, cand}), {voter, successful_ballots[voter]}),
-          MapSet.put(voter_blacklist, voter),
-          Map.delete(successful_ballots, voter)
-        }
-      true ->
-        {
-          MapSet.put(invalid_ballots, {voter, cand}),
-          MapSet.put(voter_blacklist, voter),
-          successful_ballots
-        }
+      not MapSet.member?(region_voters, voter) -> {:unregistered_voter, voter}
+      not MapSet.member?(participating_voters, voter) -> {:not_participating_voter, voter}
+      MapSet.member?(voter_blacklist, voter) -> {:banned_voter, voter, audited_votes[voter]}
+      Map.has_key?(audited_votes, voter) -> {:multiple_votes, voter, Enum.filter(received_votes, fn {:vote, v, _c} -> v == voter end)}
+      not MapSet.member?(candidates, cand) -> {:ineligible_cand, voter, cand}
+      true -> {:valid_vote, voter, cand}
     end
   end
 end
@@ -307,14 +324,6 @@ defmodule SleepThroughVoting do
   end
 end
 
-defmodule RegionVoters do
-  def receive do
-    receive do
-      %VoterRegistry{voters: region_voters} -> region_voters
-    end
-  end
-end
-
 # The actor that manages voting and elects a winner
 defmodule VoteLeader do
   defstruct [:pid]
@@ -401,9 +410,26 @@ defmodule VoteLeader do
     send auditor, {:audit_ballots, self(), MapSet.new(Enum.map(cand_data.cands, fn %CandStruct{name: name, tax_rate: _, pid: _} -> name end)), voter_data.votes}
     receive do
       {:invalidated_ballots, invalid_ballots} ->
-        conclude_vote(%{voter_data | votes: Enum.filter(voter_data.votes, fn vote -> !MapSet.member?(invalid_ballots, vote) end)},
-          cand_data, cand_registry, auditor, region_manager)
+        invalid_voters = get_invalid_voters(invalid_ballots)
+        valid_votes = Enum.filter(voter_data.votes, fn {:vote, voter, _cand} -> !MapSet.member?(invalid_voters, voter) end)
+        conclude_vote(%{voter_data | votes: valid_votes}, cand_data, cand_registry, auditor, region_manager)
     end
+  end
+
+  defp extract_voter(ballot) do
+    case ballot do
+      {:unregistered_voter, voter} -> voter
+      {:not_participating_voter, voter} -> voter
+      {:multiple_votes, voter, _} -> voter
+      {:ineligible_cand, voter, _} -> voter
+      {:banned_voter, voter, _} -> voter
+    end
+  end
+
+  defp get_invalid_voters(invalid_ballots) do
+    Enum.reduce(invalid_ballots, MapSet.new(), fn b, voters ->
+      MapSet.put(voters, extract_voter(b))
+    end)
   end
 
   # Determine a winner, or if there isn't one, remove a loser and start next voting loop

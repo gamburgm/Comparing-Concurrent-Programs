@@ -241,30 +241,48 @@
 (define (make-auditor region voter-registry)
   (define retrieve-voters-chan (make-channel))
   (define audit-chan (make-channel))
+
+  (define (receive-region-roll)
+    (channel-put voter-registry (voter-roll retrieve-voters-chan region))
+    (define voter-payload (channel-get retrieve-voters-chan))
+    (match voter-payload
+      [(payload voters) voters]))
   
   (thread
     (thunk
-      (define voters-in-region (receive-region-roll voter-registry retrieve-voters-chan region))
+      (define voters-in-region (receive-region-roll))
 
       (let loop ([participating-voters (set)]
                  [voter-blacklist (set)])
 
-        (define (get-invalid-ballots candidates ballots)
-          (for/fold ([invalid-ballots (set)]
-                     [seemingly-good-votes (hash)]
-                     [new-blacklist voter-blacklist])
-                    ([vote ballots])
+        (define (process-ballots cands votes)
+          (for/fold ([audited-ballots (hash)]
+                      [blacklist voter-blacklist])
+                    ([vote votes])
             (match-define (ballot voter candidate) vote)
-            (cond
-              [(and (set-member? voters-in-region voter)
-                    (set-member? participating-voters voter)
-                    (not (set-member? new-blacklist voter))
-                    (not (hash-has-key? seemingly-good-votes voter))
-                    (set-member? candidates candidate))
-                (values invalid-ballots (hash-set seemingly-good-votes voter candidate) new-blacklist)]
-              [(hash-has-key? seemingly-good-votes voter)
-                (values (set-add (set-add invalid-ballots (ballot voter (hash-ref seemingly-good-votes voter))) (ballot voter candidate)) (hash-remove seemingly-good-votes voter) (set-add new-blacklist voter))]
-              [else (values (set-add invalid-ballots (ballot voter candidate)) seemingly-good-votes (set-add new-blacklist voter))])))
+            (define audited-ballot (audit-ballot audited-ballots blacklist cands votes candidate voter))
+            (values
+              (hash-set audited-ballots voter audited-ballot)
+              (update-blacklist blacklist voter audited-ballot))))
+
+        (define (audit-ballot audited-ballots blacklist candidates received-votes cand voter)
+          (cond
+            [(not (set-member? voters-in-region voter))
+             (unregistered-voter voter)]
+            [(not (set-member? participating-voters voter))
+             (not-participating-voter voter)]
+            [(set-member? blacklist voter)
+             (banned-voter voter (hash-ref audited-ballots voter))]
+            [(hash-has-key? audited-ballots voter)
+             (multiple-votes voter (filter (λ (b) (string=? voter (ballot-voter b))) received-votes))]
+            [(not (set-member? candidates cand))
+             (ineligible-cand voter cand)]
+            [else (valid-vote voter cand)]))
+
+        (define (update-blacklist blacklist voter audited-ballot)
+          (if (valid-vote? voter)
+            blacklist
+            (set-add blacklist voter)))
 
         (define audit-request (channel-get audit-chan))
         (match audit-request
@@ -273,16 +291,11 @@
            (channel-put recv-chan (invalidated-voters invalid-voters))
            (loop voters invalid-voters)]
           [(audit-ballots recv-chan candidates votes)
-           (define-values (invalid-ballots good-votes new-blacklist) (get-invalid-ballots candidates votes))
+           (define-values (audited-ballots new-blacklist) (process-ballots candidates votes))
+           (define invalid-ballots (filter (λ (b) (not (valid-vote? b))) (hash-values audited-ballots)))
            (channel-put recv-chan (invalidated-ballots invalid-ballots))
-           (loop participating-voters (set-subtract voters-in-region (list->set (hash-keys good-votes))))]))))
+           (loop participating-voters new-blacklist)]))))
   audit-chan)
-
-(define (receive-region-roll voter-registry retrieve-voters-chan region)
-  (channel-put voter-registry (voter-roll retrieve-voters-chan region))
-  (define voter-payload (channel-get retrieve-voters-chan))
-  (match voter-payload
-    [(payload voters) voters]))
 
 ;; Make the Vote Leader thread
 ;; Region Chan Chan Chan -> vote leader thread
@@ -346,11 +359,6 @@
         ;; NOTE move this to just above the match?
         (define vote-timeout (alarm-evt VOTE-DEADLINE))
 
-        (define (create-voter-lookup voters)
-          (for/hash ([voter voters]) (values (voter-name voter) voter)))
-
-        (define voter-lookup (create-voter-lookup voters))
-
         (let voting-loop ([voting-record '()])
 
           ;; Determine winner if one candidate has received majority of votes, otherwise begin next round of voting
@@ -360,7 +368,16 @@
             (define audit-payload (channel-get audited-votes-chan))
             (match audit-payload
               [(invalidated-ballots invalid-ballots)
-               (define valid-ballots (filter (λ (b) (not (set-member? invalid-ballots b))) voting-record))
+               (define invalid-voters
+                 (for/set ([b invalid-ballots])
+                   (match b
+                     [(or (unregistered-voter v)
+                          (not-participating-voter v)
+                          (banned-voter v _)
+                          (multiple-votes v _)
+                          (ineligible-cand v _))
+                      v])))
+               (define valid-ballots (filter (λ (b) (not (set-member? invalid-voters (ballot-voter b)))) voting-record))
                (define votes
                  (for/fold ([votes (hash)])
                            ([vote valid-ballots])

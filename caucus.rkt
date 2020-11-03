@@ -284,7 +284,8 @@
             (assert (valid-voters region (set-subtract (participating-voters) (voter-blacklist)))))
 
     (during (round $id region $round-candidates)
-      (field [audited-ballots (hash)])
+      (field [audited-ballots (hash)]
+             [received-ballots '()])
 
       (define (already-voted? voter)
         (hash-has-key? (audited-ballots) voter))
@@ -300,16 +301,13 @@
           [(set-member? (voter-blacklist) voter)
            (banned-voter voter)]
           [(already-voted? voter)
-           (multiple-votes voter (list (ballot voter cand) (hash-ref (audited-ballots) voter)))]
+           (multiple-votes voter (filter (λ (b) (string=? voter (ballot-voter b))) (received-ballots)))]
           [(not (set-member? round-candidates cand))
            (ineligible-candidate voter cand)]
           [else (valid-vote voter cand)]))
 
       (define (update-blacklist voter audited-ballot blacklist)
         (if (valid-vote? audited-ballot) blacklist (set-add voter blacklist)))
-
-      (define (update-audit voter audited-ballot audited-ballots)
-        (hash-set audited-ballots voter audited-ballot))
 
       ;; FIXME a lot of mutation here, maybe we could do better?
       (define (process-ballot voter cand)
@@ -325,9 +323,11 @@
         (assert (audited-round id region invalid-ballots)))
 
       (on (asserted (vote $who id region $for))
+          (received-ballots (cons (ballot who for) (received-ballots)))
           (audit-ballot who for))
 
       (on (retracted (vote $who id region $for))
+          (received-ballots (remove (ballot who for) (received-ballots)))
           (audited-ballots (hash-remove (audited-ballots) who))))))
 
 ;; Name -> [[Listof Candidate] -> [Listof Candidate]]

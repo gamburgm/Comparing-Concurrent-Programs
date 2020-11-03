@@ -1,6 +1,6 @@
 #lang racket
 
-(provide ballot ballot-voter candidate candidate-name candidate-results-chan drop-out loser voter voter-name voter-voting-chan request-vote vote ballot-results all-candidates all-voters declare-winner publish withdraw subscribe message payload register change-reg unregister voter-roll registration-config register-evt audit-voters invalidated-voters audit-ballots invalidated-ballots get-evt-info evt-info REG-DEADLINE-NAME DOORS-CLOSE-NAME)
+(provide (all-defined-out))
 
 ;;;;;;; CONSTANTS ;;;;;;;
 (define REG-DEADLINE-NAME 'registration-deadline)
@@ -111,6 +111,36 @@
 ;; an InvalidatedBallots is an (invalidated-ballots [Set-of Ballot])
 (struct invalidated-ballots (invalid-ballots) #:transparent)
 
+;;;;;;; BALLOT STRUCTS ;;;;;;;;
+;; an AuditedBallot is one of:
+;; - a ValidVote
+;; - an InvalidBallot
+
+;; a ValidVote is a (valid-vote Name Name)
+(struct valid-vote (voter cand) #:transparent)
+
+;; An InvalidBallot is one of:
+;; - an UnregisteredVoter
+;; - a NotParticipatingVoter
+;; - a MultipleVotes
+;; - an IneligibleCandidate
+;; - a BannedVoter
+
+;; an UnregisteredVoter is an (unregistered-voter Name)
+(struct unregistered-voter (name) #:transparent)
+
+;; a NotParticipatingVoter is a (not-participating-voter Name)
+(struct not-participating-voter (name) #:transparent)
+
+;; a MultipleVotes is a (multiple-votes Name [List-of Vote])
+(struct multiple-votes (voter votes) #:transparent) 
+
+;; an IneligibleCandidate is an (ineligible-cand Name Name)
+(struct ineligible-cand (voter cand) #:transparent)
+
+;; a BannedVoter is a (banned-voter Name InvalidBallot)
+(struct banned-voter (voter ballot) #:transparent)
+
 ;;;; ENTITIES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 1. Candidates        
 ;; 2. Candidate Registry
@@ -150,12 +180,16 @@
 ;; Voter Registry replies with a Payload message with the requested voters.
 ;;
 ;; Auditing Conversations
-;; An Auditor communicates with a Client about invalid voters or ballots that the Client needs examined.
-;; Clients send an AuditVoters message to the Auditor containing a set of Names. The Auditor responds with an InvalidatedVoters
-;; message containing the set of Names of voters not registered to vote in that region.
-;; Clients send the Auditor an AuditBallots message, containing the candidates still in the race in that region and a list of Ballots.
-;; The Auditor responds with an InvalidBallots message containing the set of Ballots that have violated the voting rules.
-;; Each region contains an Auditor, where the Client is the Vote Leader of that region.
+;; There is an Auditor in a region that notifies a Client in that region of illegal behavior by voters in that region.
+;; Clients send an Auditvoters message to the Auditor containing a set of Names of voters intending to participate in the 
+;; caucus in that region. The Auditor replies with an InvalidatedVoters message, containing the set of Names of voters intending
+;; to participate in the vote but not registered to do so. The Auditor provides this information as though the doors
+;; have closed for participation.
+;; Clients send the Auditor an AuditBallots message, containing the candidates still in the race in that region, and a list of
+;; submitted Votes. The Auditor responds with an InvalidBallots message, containing a list of InvalidBallots representing
+;; the votes that have violated the rules of the caucus. The Auditor acts as though this signals the end of the round of
+;; voting in that region.
+;; In practice, there is one Auditor per region, and the Client is that region's Vote Leader.
 ;;
 ;; A Ballot is only valid if all of the following are true:
 ;; - The voter is registered in the region the ballot was received in

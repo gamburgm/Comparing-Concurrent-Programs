@@ -142,8 +142,7 @@
 ;; When doors close for participation in the vote in a Region, the Client expresses interest in ValidVoters assertion,
 ;; providing the region and expecting a set of Names of voters that are trying 
 
-
-;; TODO best way of articulating the `Auditor replies as if...` idea?
+;; FIXME can still do a lot better
 ;; There is an Auditor in a region that notifies a Client of illegal activity by voters in that region.
 ;; When doors close for participation in the vote in a Region, the Client expresses interest in a ValidVoters assertion,
 ;; providing the region of the Auditor, and expecting a set of Names of voters that are both participating and registered

@@ -38,6 +38,25 @@
 # a Message is a {:msg, PID}
 # a Remove is a {:remove, PID}
 #
+# an AuditedBallot is one of:
+# - a ValidVote
+# - an InvalidBallot
+#
+# a ValidVote is a {:valid_vote, [Name of Voter], [Name of Candidate]}
+#
+# an InvalidBallot is one of:
+# - UnregisteredVoter
+# - NotParticipatingVoter
+# - MultipleVotes
+# - IneligibleCandidate
+# - BannedVoter
+#
+# an UnregisteredVoter is an {:unregistered_voter, Name}
+# a NotParticipatingVoter is a {:not_participating_voter, Name}
+# a MultipleVotes is a {:multiple_votes, Name, [List-of Ballot]}
+# an IneligibleCandidate is an {:ineligible_cand, [Name of Voter], [Name of Candidate]}
+# a BannedVoter is a {:banned_voter, Name, InvalidBallot}
+#
 # Messages regarding Auditing:
 # an AuditVoters is an {:audit_voters, PID, [Set-of Name]}
 # an InvalidatedVoters is an {:invalidated_voters, [Set-of Name]}
@@ -84,12 +103,14 @@
 # of eligible candidates and a new Ballot with one fewer candidate is sent to voters in a new round of voting.
 #
 # There is a conversation about auditing:
-# There is an Auditor that alerts a Client to invalid Voters or Votes the Client asks it to validate.
-# The Client sends an AuditVoters message containing a set of Names representing voters. The Auditor responds with an
-# InvalidatedVoters message containing the set of Names of voters not registered to vote in that region.
-# The Client sends the Auditor an AuditBallots message containing a set of Ballots, and the Auditor responds with an
-# InvalidatedBallots message containing the set of all Ballots that violate a rule in the voting process.
-# Each region contains an Auditor where the Client is the region's Vote Leader.
+# There is an Auditor in a region that responds to Client requests to validate information regarding an election in that region.
+# The Client sends an AuditVoters message containing a set of Names representing voters. The Auditor responds with
+# an InvalidatedVoters message contianing the set of Nmaes of voters not registered to vote in that region, acting as if
+# the doors have closed for participation in that region.
+# The Client sends the auditor an AuditBallots message containing a list of Ballots. the Auditor responds with
+# an InvalidatedBallots message, containing a list of InvalidBallots that violate a rule in the voting process, and
+# acting as if a round of voting has just ended.
+# Each region contains one Auditor where the client is the region's Vote Leader.
 #
 # In order for a ballot to be counted and not be tossed out, all of the following must be true:
 # - The voter must be registered to vote in the region that the ballot was received in
