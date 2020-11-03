@@ -120,7 +120,7 @@
     (assert (doors-close participation-deadline region))
 
     ;; [Listof Name] -> Elected
-    (define (run-round voters current-cands)
+    (define (run-round current-cands current-voters)
       (printf "still in the running: ~a\n" current-cands)
       (define round-id (gensym 'round))
       (react
@@ -145,7 +145,7 @@
               (stop-current-facet (count-votes round-id round-runner-id (still-in-the-running) (submitted-ballots))))
 
             (begin/dataflow
-              (when (set-empty? (set-subtract voters (have-voted)))
+              (when (set-empty? (set-subtract current-voters (have-voted)))
                 (end-round)))
 
             (on-start
@@ -157,17 +157,21 @@
 
     ;; ID [List-of Name] -> Elected
     (define (count-votes round-id round-runner-id cands ballots)
+      ;; InvalidBallot -> Name
+      (define (get-voter-from-ballot invalid-ballot)
+        (match b
+          [(or (unregistered-voter v)
+                (not-participating-voter v)
+                (multiple-votes v _)
+                (ineligible-candidate v _)
+                (banned-voter v _))
+            v]))
+
       (react
         (on (asserted (audited-round round-id region $invalid-ballots))
           (define invalid-voters
             (for/set ([b invalid-ballots])
-              (match b
-                [(or (unregistered-voter v)
-                     (not-participating-voter v)
-                     (multiple-votes v _)
-                     (ineligible-candidate v _)
-                     (banned-voter v _))
-                 v])))
+                     (get-voter-from-ballot b)))
 
           (define valid-ballots
             (for/list ([b ballots]
@@ -202,12 +206,12 @@
               (define next-candidates (set-intersect (candidates) (set-remove cands loser)))
               (define valid-voter-names
                 (for/set ([b valid-ballots]) (ballot-voter b)))
-              (stop-current-facet (stop-facet round-runner-id (run-round valid-voter-names next-candidates)))]))))
+              (stop-current-facet (stop-facet round-runner-id (run-round next-candidates valid-voter-names)))]))))
 
     (define (prepare-voting candidates)
       (react
         (on (asserted (valid-voters region $voters))
-            (stop-current-facet (run-round voters candidates)))))
+            (stop-current-facet (run-round candidates voters)))))
 
     (on-start
       (react
@@ -287,6 +291,8 @@
       (field [audited-ballots (hash)]
              [received-ballots '()])
 
+      ;; Has this voter voted?
+      ;; Name -> Boolean
       (define (already-voted? voter)
         (hash-has-key? (audited-ballots) voter))
 
@@ -306,10 +312,13 @@
            (ineligible-candidate voter cand)]
           [else (valid-vote voter cand)]))
 
+      ;; Add voter to blacklist if the corresponding ballot isn't a ValidBallot
+      ;; Name AuditedBallot [Set-of Name] -> [Set-of Name]
       (define (update-blacklist voter audited-ballot blacklist)
         (if (valid-vote? audited-ballot) blacklist (set-add voter blacklist)))
 
-      ;; FIXME a lot of mutation here, maybe we could do better?
+      ;; Audit a ballot and update the audited ballots and blacklist accordingly
+      ;; Name Name -> void
       (define (process-ballot voter cand)
         (define audited-ballot (audit-ballot voter cand))
         (audited-ballots (hash-set (audited-ballots) voter (audited-ballots)))
