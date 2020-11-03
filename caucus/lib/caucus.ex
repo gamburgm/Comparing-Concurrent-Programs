@@ -449,14 +449,27 @@ defmodule VoteLeader do
         audit_votes(voter_data, cand_data, cand_registry, auditor, region_manager)
       vote = {:vote, voter_name, cand_name} ->
         IO.puts "Voter #{inspect voter_name} is voting for candidate #{inspect cand_name}!"
-        vote_loop(
-          %{voter_data | votes: [vote | voter_data.votes]},
-          cand_data,
-          cand_registry,
-          auditor,
-          region_manager
-        )
+        new_voter_data = %{voter_data | votes: [vote | voter_data.votes]}
+
+        if all_voters_voted?(new_voter_data) do
+          audit_votes(new_voter_data, cand_data, cand_registry, auditor, region_manager)
+        else
+          vote_loop(
+            new_voter_data, 
+            cand_data,
+            cand_registry,
+            auditor,
+            region_manager
+          )
+        end
     end
+  end
+
+  defp all_voters_voted?(voter_data) do
+    voters_that_voted = MapSet.new(Enum.map(voter_data.votes, fn {:vote, voter, _} -> voter end))
+    # TODO unclear if this is right or if I should map over voters
+    valid_voter_names = MapSet.new(Map.keys(voter_data.lookup))
+    MapSet.size(MapSet.difference(valid_voter_names, voters_that_voted)) == 0
   end
 
   defp audit_votes(voter_data, cand_data, cand_registry, auditor, region_manager) do
@@ -487,8 +500,13 @@ defmodule VoteLeader do
       send losing_pid, :loser
       IO.puts "Our loser is #{loser}!"
 
-      setup_voting(voter_data.voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, auditor, region_manager)
+      setup_voting(get_valid_voters(voter_data), MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, auditor, region_manager)
     end
+  end
+
+  defp get_valid_voters(voter_data) do
+    valid_voter_names = MapSet.new(Enum.map(voter_data.votes, fn {:ballot, voter, _} -> voter end))
+    Enum.filter(voter_data.voters, fn %VoterStruct{name: name, pid: _} -> MapSet.member?(valid_voter_names, name) end)
   end
 end
 
