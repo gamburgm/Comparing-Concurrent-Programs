@@ -119,15 +119,15 @@
 # - The voter must not have violated any of these rules at any prior vote during this caucus
 #
 
-# a CandData is a %CandData{cands: [Setof CandStruct], lookup: [Hash-of Name CandStruct], blacklist: [Setof CandStruct]}
-# CandData represents the status of Candidates during a Vote
-defmodule CandData do
+# a CandStatus is a %CandStatus{cands: [Setof CandStruct], lookup: [Hash-of Name CandStruct], blacklist: [Setof CandStruct]}
+# CandStatus represents the status of Candidates during a Vote
+defmodule CandStatus do
   defstruct [:cands, :lookup, :blacklist]
 end
 
-# a VoterData is a %VoterData{voters: [Setof VoterStruct], lookup: [Hash-of Name VoterStruct], votes: [Hash-of Name Name]}
-# VoterData represents the status of Voters during a Vote
-defmodule VoterData do
+# a VoterStatus is a %VoterStatus{voters: [Setof VoterStruct], lookup: [Hash-of Name VoterStruct], votes: [Hash-of Name Name]}
+# VoterStatus represents the status of Voters during a Vote
+defmodule VoterStatus do
   defstruct [:voters, :lookup, :votes]
 end
 

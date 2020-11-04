@@ -395,8 +395,8 @@ defmodule VoteLeader do
       Process.send_after self(), :timeout, 1000
 
       vote_loop(
-        %VoterData{voters: voters, lookup: voter_lookup, votes: []},
-        %CandData{
+        %VoterStatus{voters: voters, lookup: voter_lookup, votes: []},
+        %CandStatus{
           cands: valid_candidates, 
           lookup: Enum.reduce(valid_candidates, %{}, fn cand, acc -> Map.put(acc, cand.name, cand) end), 
           blacklist: blacklist, 
@@ -430,7 +430,7 @@ defmodule VoteLeader do
   end
 
   # Receive votes from voters and elect a winner if possible
-  # VoterData CandData PID PID -> void
+  # VoterStatus CandStatus PID PID -> void
   defp vote_loop(voter_data, cand_data, cand_registry, auditor, region_manager) do
     receive do
       :timeout ->
@@ -470,7 +470,7 @@ defmodule VoteLeader do
   end
 
   # Determine a winner, or if there isn't one, remove a loser and start next voting loop
-  # VoterData CandData PID PID -> void
+  # VoterStatus CandStatus PID PID -> void
   defp conclude_vote(voter_data, cand_data, cand_registry, auditor, region_manager) do
     initial_tally = Enum.reduce(cand_data.cands, %{}, fn %CandStruct{name: cand_name, tax_rate: _, pid: _}, init -> Map.put(init, cand_name, 0) end)
     tally = Enum.reduce(voter_data.votes, initial_tally, fn {:vote, _, cand_name}, curr_tally -> Map.update!(curr_tally, cand_name, &(&1 + 1)) end)
