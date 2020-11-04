@@ -121,124 +121,112 @@ end
 
 # An Auditor notifying a Client of illegal activity by voters
 defmodule Auditor do
+  # ASSUME that the Auditor isn't spawned until after registration has ended
   # Region PID -> Auditor
   def spawn(region, voter_registry) do
     spawn fn -> 
       send voter_registry, {:voter_roll, self(), region}
-      registered_voters = receive_region_voters()
+      registered_voters = receive do
+        %VoterRegistry{voters: v} -> v
+      end
       loop(registered_voters, MapSet.new(), Map.new())
     end
   end
 
-  # produce the voters registered to vote in the Auditor's region
-  defp receive_region_voters do
-    receive do
-      %VoterRegistry{voters: region_voters} -> region_voters
-    end
-  end
-
   # Audit voter and vote information for a client upon request
-  # [Set-of Name] [Set-of Name] [Hash-of Name -> InvalidBallot] -> void
-  defp loop(region_voters, participating_voters, vote_violations) do
+  # [Set-of Name] [Set-of Name] [Hash-of Name FailureReason] -> void
+  defp loop(region_voters, participating_voters, violations_so_far) do
     receive do
       {:audit_voters, pid, voters} ->
         blacklisted_participants = MapSet.difference(voters, region_voters)
         send pid, {:invalidated_voters, blacklisted_participants}
-        loop(region_voters, voters, vote_violations)
+        loop(region_voters, voters, violations_so_far)
 
       {:audit_ballots, pid, cands, votes} ->
-        audited_votes = process_votes(region_voters, participating_voters, vote_violations, cands, votes)
-        invalid_ballots = Enum.filter(Map.values(audited_votes), fn b -> invalid_vote?(b) end)
-        send pid, {:invalidated_ballots, invalid_ballots}
-        loop(region_voters, participating_voters, update_violations(vote_violations, audited_votes, participating_voters))
+        audited_votes = process_votes(region_voters, participating_voters, violations_so_far, cands, votes)
+        new_outcomes = generate_outcomes(audited_votes)
+        send pid, {:invalidated_ballots, Enum.filter(new_outcomes, fn {:outcome, _, outcome} -> invalid_outcome?(outcome) end)}
+        loop(region_voters, participating_voters, update_violations(violations_so_far, new_outcomes, participating_voters))
     end
   end
 
+  # Produce a list of all voting violations that occurred in the current round of voting
+  # [Hash-of Name OutcomeType] -> [List-of VoterOutcome]
+  defp generate_outcomes(audited_votes) do
+    Enum.map(Map.to_list(audited_votes), fn {voter, outcome} -> {:outcome, voter, outcome} end)
+  end
+
   # Update the record of all voting violations with new audited results for a round of voting
-  # [Hash-of Name -> InvalidBallot] [Hash-of Name -> AuditedBallot] [Set-of Name] -> [Hash-of Name -> InvalidBallot]
-  defp update_violations(vote_violations, audited_votes, participating_voters) do
-    new_violations = Enum.reduce(Map.to_list(audited_votes), vote_violations, fn {voter, ballot}, violations ->
-      add_violation(violations, voter, ballot)
+  # [Hash-of Name FailureReason] [List-of VoterOutcome] [Set-of Name] -> [Hash-of Name FailureReason]
+  defp update_violations(vote_violations, new_outcomes, participating_voters) do
+    new_violations = Enum.reduce(new_outcomes, vote_violations, fn {:outcome, voter, outcome}, violations ->
+      add_violation(violations, voter, outcome)
     end)
 
-    voters_that_voted = Utils.get_voters_from_ballots(Map.values(audited_votes))
+    voters_that_voted = Utils.get_voters_from_outcomes(new_violations)
     inactive_voters = MapSet.difference(participating_voters, voters_that_voted)
 
     Enum.reduce(MapSet.to_list(inactive_voters), new_violations, fn name, violations ->
-      add_violation(violations, name, {:failed_to_vote, name})
+      add_violation(violations, name, {:failed_to_vote})
     end)
   end
 
   # Add a Ballot to the record of vote violations if that ballot is invalid
-  # [Hash-of Name -> InvalidBallot] Name AuditedBallot -> [Hash-of Name -> InvalidBallot]
-  defp add_violation(vote_violations, voter, ballot) do
-    case ballot do
-      {:valid_vote, _, _} -> vote_violations
-      {:banned_voter, _, _} -> vote_violations
-      _ -> Map.put(vote_violations, voter, ballot)
+  # [Hash-of Name FailureReason] Name OutcomeType -> [Hash-of Name FailureReason]
+  defp add_violation(vote_violations, voter, outcome) do
+    case outcome do
+      {:valid, _} -> vote_violations
+      {:banned_voter, _} -> vote_violations
+      _ -> Map.put(vote_violations, voter, outcome)
     end
   end
 
-  # Is an AuditedBallot a ValidVote?
-  # AuditedBallot -> Boolean
-  defp valid_vote?(audited_ballot) do
-    case audited_ballot do
-      {:valid_vote, _, _} -> true
+  # Is an OutcomeType a ValidOutcome?
+  # OutcomeType -> Boolean
+  defp valid_outcome?(outcome) do
+    case outcome do
+      {:valid, _} -> true
       _ -> false
     end
   end
 
-  # Is an AuditedBallot an InvalidBallot?
-  # AuditedBallot -> Boolean
-  defp invalid_vote?(audited_ballot), do: not valid_vote?(audited_ballot)
+  # Is an OutcomeType a FailureReason?
+  # OutcomeType -> Boolean
+  defp invalid_outcome?(outcome), do: not valid_outcome?(outcome)
 
-  # produce a record associating each voter's name with their corresponding AuditedBallot
-  # [Set-of Name] [Set-of Name] [Set-of Name] [Hash-of Name -> InvalidBallot] [Set-of Name] [List-of Vote] -> [Hash-of Name -> AuditedBallot]
+  # produce a record associating each voter's name with their corresponding OutcomeType
+  # [Set-of Name] [Set-of Name] [Set-of Name] [Hash-of Name FailureReason] [Set-of Name] [List-of Vote] -> [Hash-of Name OutcomeType]
   defp process_votes(region_voters, participating_voters, vote_violations, candidates, votes) do
     Enum.reduce(
       votes,
-      # [Hash-of Name -> AuditedBallot]
+      # [Hash-of Name OutcomeType]
       Map.new(),
       fn {:vote, voter, cand}, audited_votes ->
-        process_ballot(region_voters, participating_voters, vote_violations, candidates, audited_votes, votes, voter, cand)
+        audited_ballot = audit_ballot(region_voters, participating_voters, vote_violations, candidates, audited_votes, votes, voter, cand)
+        Map.put(audited_votes, voter, audited_ballot)
       end)
-  end
-
-  # Audit a ballot and update the record of Audited Ballots and the Blacklist based on the outcome
-  defp process_ballot(
-    region_voters,        # [Set-of Name]
-    participating_voters, # [Set-of Name]
-    vote_violations,      # [Hash-of Name -> InvalidBallot]
-    candidates,           # [Set-of Name]
-    audited_votes,        # [Hash-of Name -> AuditedBallot]
-    votes,                # [List-of Vote]
-    voter,                # Name
-    cand                  # Name
-  ) do                    # -> [Hash-of Name -> AuditedBallot]
-    audited_ballot = audit_ballot(region_voters, participating_voters, vote_violations, candidates, audited_votes, votes, voter, cand)
-    Map.put(audited_votes, voter, audited_ballot)
   end
 
   # Determine whether or not a ballot violates a rule of the election, and if so, which one
   defp audit_ballot(
     region_voters,        # [Set-of Name]
     participating_voters, # [Set-of Name]
-    vote_violations,      # [Hash-of Name -> InvalidBallot]
+    vote_violations,      # [Hash-of Name FailureReason]
     candidates,           # [Set-of Name]
-    audited_votes,        # [Hash-of Name -> AuditedBallot]
+    audited_votes,        # [Hash-of Name OutcomeType]
     received_votes,       # [List-of Vote]
     voter,                # Name
     cand                  # Name
-  ) do                    # -> AuditedBallot
+  ) do                    # -> OutcomeType
     cond do
       # NOTE voters violating the rules in previous rounds takes highest precedence
-      Map.has_key?(vote_violations, voter) -> {:banned_voter, voter, Map.get(vote_violations, voter)}
-      not MapSet.member?(region_voters, voter) -> {:unregistered_voter, voter}
-      not MapSet.member?(participating_voters, voter) -> {:not_participating_voter, voter}
+      Map.has_key?(vote_violations, voter) -> {:banned_voter, Map.get(vote_violations, voter)}
+      not MapSet.member?(region_voters, voter) -> {:unregistered_voter}
+      not MapSet.member?(participating_voters, voter) -> {:not_participating_voter}
       Map.has_key?(audited_votes, voter) ->
-        {:multiple_votes, voter, Enum.filter(received_votes, fn {:vote, v, _c} -> v == voter end)}
-      not MapSet.member?(candidates, cand) -> {:ineligible_cand, voter, cand}
-      true -> {:valid_vote, voter, cand}
+        {:multiple_votes, Enum.filter(received_votes, fn {:vote, v, _c} -> v == voter end)}
+      not MapSet.member?(candidates, cand) -> {:ineligible_cand, cand}
+      true -> {:valid, cand}
     end
   end
 end
@@ -467,7 +455,6 @@ defmodule VoteLeader do
 
   defp all_voters_voted?(voter_data) do
     voters_that_voted = MapSet.new(Enum.map(voter_data.votes, fn {:vote, voter, _} -> voter end))
-    # TODO unclear if this is right or if I should map over voters
     valid_voter_names = MapSet.new(Map.keys(voter_data.lookup))
     MapSet.size(MapSet.difference(valid_voter_names, voters_that_voted)) == 0
   end
@@ -476,7 +463,7 @@ defmodule VoteLeader do
     send auditor, {:audit_ballots, self(), MapSet.new(Enum.map(cand_data.cands, fn %CandStruct{name: name, tax_rate: _, pid: _} -> name end)), voter_data.votes}
     receive do
       {:invalidated_ballots, invalid_ballots} ->
-        invalid_voters = Utils.get_voters_from_ballots(invalid_ballots)
+        invalid_voters = Utils.get_voters_from_outcomes(invalid_ballots)
         valid_votes = Enum.filter(voter_data.votes, fn {:vote, voter, _cand} -> !MapSet.member?(invalid_voters, voter) end)
         conclude_vote(%{voter_data | votes: valid_votes}, cand_data, cand_registry, auditor, region_manager)
     end
@@ -505,7 +492,7 @@ defmodule VoteLeader do
   end
 
   defp get_valid_voters(voter_data) do
-    valid_voter_names = MapSet.new(Enum.map(voter_data.votes, fn {:ballot, voter, _} -> voter end))
+    valid_voter_names = MapSet.new(Enum.map(voter_data.votes, fn {:vote, voter, _} -> voter end))
     Enum.filter(voter_data.voters, fn %VoterStruct{name: name, pid: _} -> MapSet.member?(valid_voter_names, name) end)
   end
 end
@@ -596,21 +583,15 @@ defmodule StupidSort do
 end
 
 defmodule Utils do
-  def get_voters_from_ballots(ballots) do
-    Enum.reduce(ballots, MapSet.new(), fn b, voters ->
-      MapSet.put(voters, extract_voter(b))
+  def get_voters_from_outcomes(outcomes) do
+    Enum.reduce(outcomes, MapSet.new(), fn o, voters ->
+      MapSet.put(voters, extract_voter(o))
     end)
   end
 
-  defp extract_voter(ballot) do
-    case ballot do
-      {:valid_vote, voter, _} -> voter
-      {:unregistered_voter, voter} -> voter
-      {:not_participating_voter, voter} -> voter
-      {:multiple_votes, voter, _} -> voter
-      {:ineligible_cand, voter, _} -> voter
-      {:failed_to_vote, voter} -> voter
-      {:banned_voter, voter, _} -> voter
+  defp extract_voter(outcome) do
+    case outcome do
+      {:outcome, voter, _} -> voter
     end
   end
 end

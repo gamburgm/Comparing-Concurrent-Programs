@@ -13,7 +13,7 @@
 # a Ballot is a {:ballot, [Setof Candidate], PID}
 # a Vote is a {:vote, Name, Name}
 # a VoteLeader is a %VoteLeader{pid: PID}
-# a Tally is a {:tally, [Mapof Name -> Number]}
+# a Tally is a {:tally, [Hash-of Name -> Number]}
 # a CaucusWinner is a {:caucus_winner, Name}
 # a Loser is a :loser
 # an AbstractRegistry response is a %AbstractRegistry{values: [Setof X], type: X}
@@ -38,26 +38,22 @@
 # a Message is a {:msg, PID}
 # a Remove is a {:remove, PID}
 #
-# an AuditedBallot is one of:
-# - a ValidVote
-# - an InvalidBallot
+# a VoterOutcome is an {:outcome, Name, OutcomeType}
+# where the Name is the name of a voter.
 #
-# a ValidVote is a {:valid_vote, [Name of Voter], [Name of Candidate]}
+# an OutcomeType is one of:
+# - ValidOutcome
+# - FailureReason
 #
-# an InvalidBallot is one of:
-# - UnregisteredVoter
-# - NotParticipatingVoter
-# - MultipleVotes
-# - IneligibleCandidate
-# - FailedToVote
-# - BannedVoter
+# a ValidOutcome is a {:valid, Name} where Name is the name of a candidate
 #
-# an UnregisteredVoter is an {:unregistered_voter, Name}
-# a NotParticipatingVoter is a {:not_participating_voter, Name}
-# a MultipleVotes is a {:multiple_votes, Name, [List-of Ballot]}
-# an IneligibleCandidate is an {:ineligible_cand, [Name of Voter], [Name of Candidate]}
-# a FailedToVote is a {:failed_to_vote, Name}
-# a BannedVoter is a {:banned_voter, Name, InvalidBallot}
+# a FailureReason is one of:
+# {:unregistered}
+# {:not_participating}
+# {:multiple_votes, [List-of Vote]}
+# {:ineligible_cand, Name} where Name is the name of a candidate
+# {:failed_to_vote}
+# {:banned, FailureReason} where FailureReason is the reason why the voter was banned in an earlier round.
 #
 # Messages regarding Auditing:
 # an AuditVoters is an {:audit_voters, PID, [Set-of Name]}
@@ -110,8 +106,8 @@
 # an InvalidatedVoters message contianing the set of Nmaes of voters not registered to vote in that region, acting as if
 # the doors have closed for participation in that region.
 # The Client sends the auditor an AuditBallots message containing a list of Ballots. the Auditor responds with
-# an InvalidatedBallots message, containing a list of InvalidBallots that violate a rule in the voting process, and
-# acting as if a round of voting has just ended.
+# an InvalidatedBallots message, containing a list of VoterOutcomes specifying voters that voted illegally and what rule
+# of the caucus they violated. The Auditor acts as though the round of voting has just ended.
 # Each region contains one Auditor where the client is the region's Vote Leader.
 #
 # In order for a ballot to be counted and not be tossed out, all of the following must be true:
@@ -119,20 +115,17 @@
 # - The voter must be participating in the vote managed by the vote leader
 # - The voter must only submit one ballot total (if more are submitted, all ballots are thrown out)
 # - The voter must be voting for a candidate that is still in the race
-# - The voter has voted successfully in every round so far
+# - The voter must have voted successfully in every round so far
 # - The voter must not have violated any of these rules at any prior vote during this caucus
 #
-# The auditor is responsible for alerting the Vote Leader in the auditor's region about suspicious or illegal activity
-# that occurs in the duration of the caucus.
-#
 
-# a CandData is a %CandData{cands: [Setof CandStruct], lookup: [Mapof Name -> CandStruct], blacklist: [Setof CandStruct]}
+# a CandData is a %CandData{cands: [Setof CandStruct], lookup: [Hash-of Name CandStruct], blacklist: [Setof CandStruct]}
 # CandData represents the status of Candidates during a Vote
 defmodule CandData do
   defstruct [:cands, :lookup, :blacklist]
 end
 
-# a VoterData is a %VoterData{voters: [Setof VoterStruct], lookup: [Mapof Name -> VoterStruct], votes: [Mapof Name -> Name]}
+# a VoterData is a %VoterData{voters: [Setof VoterStruct], lookup: [Hash-of Name VoterStruct], votes: [Hash-of Name Name]}
 # VoterData represents the status of Voters during a Vote
 defmodule VoterData do
   defstruct [:voters, :lookup, :votes]
