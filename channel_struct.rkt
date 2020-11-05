@@ -108,38 +108,43 @@
 ;; an AuditBallots is an (audit-ballots [Chan-of InvalidatedBallots] [Set-of Name] [List-of Ballot])
 (struct audit-ballots (recv-chan candidates votes) #:transparent)
 
-;; an InvalidatedBallots is an (invalidated-ballots [Set-of Ballot])
-(struct invalidated-ballots (invalid-ballots) #:transparent)
+;; an InvalidVoterReport is an (invalid-voter-report [Set-of VoterStanding])
+(struct invalid-voter-report (standings) #:transparent)
 
-;;;;;;; BALLOT STRUCTS ;;;;;;;;
-;; an AuditedBallot is one of:
-;; - a ValidVote
-;; - an InvalidBallot
+;;;;;;; AUDITOR STRUCTS ;;;;;;;;
 
-;; a ValidVote is a (valid-vote Name Name)
-(struct valid-vote (voter cand) #:transparent)
+;; a VoterStanding is a (voter-standing Name VoterStatus)
+(struct voter-standing (name status) #:transparent)
 
-;; An InvalidBallot is one of:
+;; a VoterStatus is one of:
+;; - a CleanVoter
+;; - an InvalidReason
+
+;; a CleanVoter is a (clean)
+(struct clean () #:transparent)
+
+;; an InvalidReason is one of:
 ;; - an UnregisteredVoter
 ;; - a NotParticipatingVoter
 ;; - a MultipleVotes
 ;; - an IneligibleCandidate
+;; - a FailedToVote
 ;; - a BannedVoter
 
-;; an UnregisteredVoter is an (unregistered-voter Name)
-(struct unregistered-voter (name) #:transparent)
+;; an UnregisteredVoter is an (unregistered)
+(struct unregistered () #:transparent)
 
-;; a NotParticipatingVoter is a (not-participating-voter Name)
-(struct not-participating-voter (name) #:transparent)
+;; a NotParticipatingVoter is a (not-participating)
+(struct not-participating () #:transparent)
 
-;; a MultipleVotes is a (multiple-votes Name [List-of Vote])
-(struct multiple-votes (voter votes) #:transparent) 
+;; a MultipleVotes is a (multiple-votes [List-of Vote])
+(struct multiple-votes (votes) #:transparent) 
 
-;; an IneligibleCandidate is an (ineligible-cand Name Name)
-(struct ineligible-cand (voter cand) #:transparent)
+;; an IneligibleCandidate is an (ineligible-cand Name) where the Name is the name of a candidate
+(struct ineligible-cand (cand) #:transparent)
 
-;; a BannedVoter is a (banned-voter Name InvalidBallot)
-(struct banned-voter (voter ballot) #:transparent)
+;; a BannedVoter is a (banned-voter InvalidReason)
+(struct banned-voter (reason) #:transparent)
 
 ;;;; ENTITIES ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; 1. Candidates        
@@ -180,14 +185,14 @@
 ;; Voter Registry replies with a Payload message with the requested voters.
 ;;
 ;; Auditing Conversations
-;; There is an Auditor in a region that notifies a Client in that region of illegal behavior by voters in that region.
+;; There is an auditor in a region that notifies a Client of illegal activity committed by voters in that region.
 ;; Clients send an Auditvoters message to the Auditor containing a set of Names of voters intending to participate in the 
 ;; caucus in that region. The Auditor replies with an InvalidatedVoters message, containing the set of Names of voters intending
 ;; to participate in the vote but not registered to do so. The Auditor provides this information as though the doors
 ;; have closed for participation.
 ;; Clients send the Auditor an AuditBallots message, containing the candidates still in the race in that region, and a list of
-;; submitted Votes. The Auditor responds with an InvalidBallots message, containing a list of InvalidBallots representing
-;; the votes that have violated the rules of the caucus. The Auditor acts as though this signals the end of the round of
+;; submitted Votes. The Auditor responds with an InvalidVoterReport message, containing a list of VoterStandings representing
+;; the voters that voted and violated a rule of the caucus. The Auditor acts as though this signals the end of the round of
 ;; voting in that region.
 ;; In practice, there is one Auditor per region, and the Client is that region's Vote Leader.
 ;;
@@ -196,6 +201,7 @@
 ;; - The voter is participating in the vote managed by the vote leader
 ;; - The voter only submits one ballot per round (and if multiple ballots were submitted, all are thrown out)
 ;; - The voter votes for a candidate still in the race in that region
+;; - The voter has voted successfully in every round of voting so far
 ;; - In no previous round did the voter violate any of the above rules
 ;;
 ;; Key-Value Store/Event Conversations
