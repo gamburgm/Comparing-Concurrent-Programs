@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide ballot ballot-voter participating vote round candidate candidate-name tally elected winner voter-roll register change-reg unregister registration-deadline doors-opened doors-close registration-open reg-fail valid-voters audited-round valid-vote valid-vote? unregistered-voter not-participating-voter multiple-votes ineligible-candidate banned-voter)
+(provide (all-defined-out))
 
 ;; a Name is a (caucus-unique) String
 
@@ -68,45 +68,53 @@
 ;; a RegistrationFailure is a (reg-fail Name)
 (assertion-struct reg-fail (name))
 
-;; a ValidVoters is a (valid-voters Region [Set-of Name])
-(assertion-struct valid-voters (region names))
+;; a ValidVoterReport is a (valid-voter-report Region [Set-of Name])
+(assertion-struct valid-voter-report (region names))
 
 ;; an AuditedRound is an (audited-round ID Region [List-of InvalidBallot])
 (assertion-struct audited-round (round-id region ballots))
 
-;; a ValidVote is a (valid-vote Name Name)
-(assertion-struct valid-vote (voter cand))
+;; a VoterStanding is a (voter-standing Name VoterStatus)
+(assertion-struct voter-standing (name status))
 
-;; an AuditedBallot is one of:
-;; - a ValidVote
-;; - an InvalidBallot
+;; a VoterStatus is one of:
+;; - CleanVoter
+;; - InvalidStatus
 
-;; an InvalidBallot is one of:
+;; a CleanVoter is a (clean)
+(assertion-struct clean ())
+
+;; an InvalidStatus is one of:
 ;; - UnregisteredVoter
 ;; - NotParticipatingVoter
 ;; - MultipleVotes
 ;; - IneligibleCandidate
+;; - FailedToVote
 ;; - BannedVoter
 
-;; an UnregisteredVoter is an (unregistered-voter Name)
-(assertion-struct unregistered-voter (name))
+;; an UnregisteredVoter is an (unregistered)
+(assertion-struct unregistered ())
 
-;; a NotParticipatingVoter is a (not-participating-voter Name)
-(assertion-struct not-participating-voter (name))
+;; a NotParitcipatingVoter is a (not-participating)
+(assertion-struct not-participating ())
 
-;; a MultipleVotes is a (multiple-votes Name [List-of Ballot])
-(assertion-struct multiple-votes (name ballots))
+;; a MultipleVotes is a (multiple-votes [List-of Ballot])
+(assertion-struct multiple-votes (ballots))
 
-;; an IneligibleCandidate is an (ineligible-candidate Name Name)
-(assertion-struct ineligible-candidate (voter cand))
+;; an IneligibleCandidate is an (ineligible-cand Name) where Name is the name of a candidate
+(assertion-struct ineligible-cand (cand))
 
-;; a BannedVoter is a (banned-voter Name InvalidBallot)
-(assertion-struct banned-voter (name vote))
+;; a FailedToVote is a (failed-to-vote)
+(assertion-struct failed-to-vote ())
+
+;; a BannedVoter is a (banned-voter Status)
+(assertion-struct banned-voter (reason))
 
 ;; There are five actor roles:
 ;; - Caucus Leaders
 ;; - Candidates
 ;; - Voters
+;; - Auditor
 ;; - Voter Registry
 ;; - Region Manager
 
@@ -142,9 +150,8 @@
 ;; When doors close for participation in the vote in a Region, the Client expresses interest in ValidVoters assertion,
 ;; providing the region and expecting a set of Names of voters that are trying 
 
-;; FIXME can still do a lot better
 ;; There is an Auditor in a region that notifies a Client of illegal activity by voters in that region.
-;; When doors close for participation in the vote in a Region, the Client expresses interest in a ValidVoters assertion,
+;; When doors close for participation in the caucus in a Region, the Client expresses interest in a ValidVoters assertion,
 ;; providing the region of the Auditor, and expecting a set of Names of voters that are both participating and registered
 ;; to vote. The Auditor provides this information as if doors have closed for participation in the Auditor's region.
 ;; When the Client expresses interest in an AuditedRound assertion, providing the region of the Auditor and the ID of a 
