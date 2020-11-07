@@ -242,6 +242,7 @@
   (define retrieve-voters-chan (make-channel))
   (define audit-chan (make-channel))
 
+  ;; -> [Set-of Name]
   (define (receive-region-roll)
     (channel-put voter-registry (voter-roll retrieve-voters-chan region))
     (define voter-payload (channel-get retrieve-voters-chan))
@@ -252,8 +253,8 @@
     (thunk
       (define voters-in-region (receive-region-roll))
 
-      (let loop ([participating-voters (set)]
-                 [voter-blacklist (set)])
+      (let loop ([participating-voters (set)]  ;; [Set-of Name]
+                 [banned-voter-record (hash)]) ;; [Hash-of Name InvalidReason]
 
         (define (process-ballots cands votes)
           (for/fold ([audited-ballots (hash)]
@@ -265,24 +266,33 @@
               (hash-set audited-ballots voter audited-ballot)
               (update-blacklist blacklist voter audited-ballot))))
 
-        (define (audit-ballot audited-ballots blacklist candidates received-votes cand voter)
-          (cond
-            [(not (set-member? voters-in-region voter))
-             (unregistered-voter voter)]
-            [(not (set-member? participating-voters voter))
-             (not-participating-voter voter)]
-            [(set-member? blacklist voter)
-             (banned-voter voter (hash-ref audited-ballots voter))]
-            [(hash-has-key? audited-ballots voter)
-             (multiple-votes voter (filter (λ (b) (string=? voter (ballot-voter b))) received-votes))]
-            [(not (set-member? candidates cand))
-             (ineligible-cand voter cand)]
-            [else (valid-vote voter cand)]))
+        ;; How is `audit-ballot` getting used?
+        ;; when the list of ballots to be audited is received:
+        ;;   - for each ballot:
+        ;;     - audit the ballot to determine the results
+        ;;     - update the audited voters hash accordingly
+        ;;     - return audited voters
+        ;;   - send all the bad values over to the vote leader
+        ;;   - update the banned-voter-record with bad voters
+        ;;   - update the banned-voter-record with voters that didn't vote
 
-        (define (update-blacklist blacklist voter audited-ballot)
-          (if (valid-vote? voter)
-            blacklist
-            (set-add blacklist voter)))
+
+        ;; [Hash-of Name VoterStatus] [Set-of Name] [List-of Vote] Name Name -> VoterStatus
+        (define (audit-ballot audited-voters candidates received-votes cand voter)
+          (cond
+            [(hash-has-key? banned-voter-record voter)
+             (banned-voter (hash-ref banned-voter-record voter))]
+            [(not (set-member? voters-in-region voter)) (unregistered)]
+            [(not (set-member? participating-voters voter)) (not-participating)]
+            [(hash-has-key? audited-voters voter)
+             (multiple-votes (filter (λ (b) (string=? voter (ballot-voter b))) received-votes))]
+            [(not (set-member? candidates cand)) (ineligible-cand cand)]
+            [else (clean)]))
+
+        (define (process-ballots candidates received-votes)
+          (for/fold ([audited-voters (hash)]) ;; [Hash-of Name VoterStatus]
+                    ([vote received-votes])   ;; Vote
+            (match-define (ballot voter
 
         (define audit-request (channel-get audit-chan))
         (match audit-request
@@ -291,7 +301,8 @@
            (channel-put recv-chan (invalidated-voters invalid-voters))
            (loop voters invalid-voters)]
           [(audit-ballots recv-chan candidates votes)
-           (define-values (audited-ballots new-blacklist) (process-ballots candidates votes))
+           (define audited-voters (process-ballots candidates votes))
+
            (define invalid-ballots (filter (λ (b) (not (valid-vote? b))) (hash-values audited-ballots)))
            (channel-put recv-chan (invalidated-ballots invalid-ballots))
            (loop participating-voters new-blacklist)]))))

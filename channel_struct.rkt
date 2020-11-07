@@ -111,8 +111,6 @@
 ;; an InvalidVoterReport is an (invalid-voter-report [Set-of VoterStanding])
 (struct invalid-voter-report (standings) #:transparent)
 
-;;;;;;; AUDITOR STRUCTS ;;;;;;;;
-
 ;; a VoterStanding is a (voter-standing Name VoterStatus)
 (struct voter-standing (name status) #:transparent)
 
