@@ -1,0 +1,23 @@
+{
+  "regions": [
+    {
+      "name": "america",
+      "rounds": [
+        {
+          "active_voters": ["A", "B", "C", "D", "E", "F", "G"],
+          "active_cands": ["Bernie", "Biden", "Tulsi"],
+          "tally": { "Bernie": 2, "Biden": 3, "Tulsi": 2 },
+          "result": { "type": "Loser", "candidate": "Bernie" }
+        },
+        {
+          "active_voters": ["A", "B", "C", "D", "E", "F", "G"],
+          "active_cands": ["Biden", "Tulsi"],
+          "tally": { "Biden": 5, "Tulsi": 2 },
+          "result": { "type": "Winner", "candidate": "Biden" }
+        }
+      ],
+      "winner": "Biden"
+    }
+  ],
+  "winner": "Biden"
+}

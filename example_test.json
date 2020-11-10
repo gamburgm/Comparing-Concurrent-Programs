@@ -1,0 +1,21 @@
+{
+  "candidates": [
+    { "name": "Bernie", "tax_rate": 50, "threshold": 2 },
+    { "name": "Biden", "tax_rate": 25, "threshold": 1 },
+    { "name": "Tulsi", "tax_rate": 16, "threshold": 300 }
+  ],
+  "regions": [
+    {
+      "name": "america",
+      "voters": [
+        { "name": "A", "voting_method": { "type": "stupid_sort", "candidate": "Bernie" } },
+        { "name": "B", "voting_method": { "type": "stupid_sort", "candidate": "Bernie" } },
+        { "name": "C", "voting_method": { "type": "stupid_sort", "candidate": "Biden" } },
+        { "name": "D", "voting_method": { "type": "stupid_sort", "candidate": "Biden" } },
+        { "name": "E", "voting_method": { "type": "stupid_sort", "candidate": "Biden" } },
+        { "name": "F", "voting_method": { "type": "stupid_sort", "candidate": "Tulsi" } },
+        { "name": "G", "voting_method": { "type": "stupid_sort", "candidate": "Tulsi" } },
+      ]
+    }
+  ]
+}

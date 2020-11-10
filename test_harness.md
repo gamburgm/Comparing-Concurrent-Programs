@@ -67,6 +67,7 @@ A `Round` is a:
 ```json
 {
   "active_voters": ["string"],
+  "active_cands": ["string"],
   "tally": "tally",
   "result": "round_result"
 }
