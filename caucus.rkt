@@ -262,7 +262,6 @@
 ;; Region -> Auditor
 (define (spawn-auditor region)
   (spawn
-    (field [banned-voter-record (hash)]) ;; [Hash-of Name InvalidStatus]
 
     (define (audit-voting registered-voters participating-voters)
       (react
@@ -304,6 +303,7 @@
                         #:when (not (clean? status)))
                 (voter-standing voter status))) 
 
+            ;; TODO voters that voted in error need to be properly added to this set
             (define non-voting-voters
               (set-subtract participating-voters
                             (set-union (list->set (hash-keys (voter-statuses)))
@@ -339,8 +339,8 @@
         (on (retracted (participating $name region))
             (participating-voters (set-remove (participating-voters) name)))
 
-        (during (observe (valid-voter-report region _))
-            (stop-current-facet (stop-facet setup-id (audit-voting (registered-voters) (set-intersect (registered-voters) (participating-voters))))))))))
+        (on (asserted (observe (valid-voter-report region _)))
+            (stop-facet setup-id (audit-voting (registered-voters) (set-intersect (registered-voters) (participating-voters)))))))))
 
 ;; Name -> [[Listof Candidate] -> [Listof Candidate]]
 (define (stupid-sort cand-name)

@@ -107,7 +107,7 @@
 ;; a FailedToVote is a (failed-to-vote)
 (assertion-struct failed-to-vote ())
 
-;; a BannedVoter is a (banned-voter Status)
+;; a BannedVoter is a (banned-voter InvalidStatus)
 (assertion-struct banned-voter (reason))
 
 ;; There are five actor roles:

@@ -40,7 +40,7 @@
 (struct request-vote (candidates chan) #:transparent)
 
 ;; a Vote is a (vote Name Name)
-(struct vote (name candidate) #:transparent)
+(struct vote (voter cand) #:transparent)
 
 ;; a BallotResults is a (ballot-results (Hashof Name . number))
 (struct ballot-results (votes) #:transparent)
@@ -140,6 +140,9 @@
 
 ;; an IneligibleCandidate is an (ineligible-cand Name) where the Name is the name of a candidate
 (struct ineligible-cand (cand) #:transparent)
+
+;; a FailedToVote is a (failed-to-vote)
+(struct failed-to-vote () #:transparent)
 
 ;; a BannedVoter is a (banned-voter InvalidReason)
 (struct banned-voter (reason) #:transparent)

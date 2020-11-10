@@ -257,25 +257,10 @@
                  [banned-voter-record (hash)]) ;; [Hash-of Name InvalidReason]
 
         (define (process-ballots cands votes)
-          (for/fold ([audited-ballots (hash)]
-                      [blacklist voter-blacklist])
-                    ([vote votes])
-            (match-define (ballot voter candidate) vote)
-            (define audited-ballot (audit-ballot audited-ballots blacklist cands votes candidate voter))
-            (values
-              (hash-set audited-ballots voter audited-ballot)
-              (update-blacklist blacklist voter audited-ballot))))
-
-        ;; How is `audit-ballot` getting used?
-        ;; when the list of ballots to be audited is received:
-        ;;   - for each ballot:
-        ;;     - audit the ballot to determine the results
-        ;;     - update the audited voters hash accordingly
-        ;;     - return audited voters
-        ;;   - send all the bad values over to the vote leader
-        ;;   - update the banned-voter-record with bad voters
-        ;;   - update the banned-voter-record with voters that didn't vote
-
+          (for/fold ([audited-voters (hash)])
+                    ([submitted-vote votes])
+            (match-define (vote voter cand) submitted-vote)
+            (hash-set audited-voters voter (audit-ballot audited-voters cands votes cand voter))))
 
         ;; [Hash-of Name VoterStatus] [Set-of Name] [List-of Vote] Name Name -> VoterStatus
         (define (audit-ballot audited-voters candidates received-votes cand voter)
@@ -285,27 +270,46 @@
             [(not (set-member? voters-in-region voter)) (unregistered)]
             [(not (set-member? participating-voters voter)) (not-participating)]
             [(hash-has-key? audited-voters voter)
-             (multiple-votes (filter (λ (b) (string=? voter (ballot-voter b))) received-votes))]
+             (multiple-votes (filter (λ (b) (string=? voter (vote-voter b))) received-votes))]
             [(not (set-member? candidates cand)) (ineligible-cand cand)]
             [else (clean)]))
-
-        (define (process-ballots candidates received-votes)
-          (for/fold ([audited-voters (hash)]) ;; [Hash-of Name VoterStatus]
-                    ([vote received-votes])   ;; Vote
-            (match-define (ballot voter
 
         (define audit-request (channel-get audit-chan))
         (match audit-request
           [(audit-voters recv-chan voters)
            (define invalid-voters (set-subtract voters voters-in-region))
            (channel-put recv-chan (invalidated-voters invalid-voters))
-           (loop voters invalid-voters)]
+           (loop (set-intersect voters-in-region voters) banned-voter-record)]
           [(audit-ballots recv-chan candidates votes)
            (define audited-voters (process-ballots candidates votes))
+           (define bad-voter-standings
+             (for/list ([(name status) (in-hash audited-voters)]
+                        #:when (not (clean? status)))
+               (voter-standing name status)))
 
-           (define invalid-ballots (filter (λ (b) (not (valid-vote? b))) (hash-values audited-ballots)))
-           (channel-put recv-chan (invalidated-ballots invalid-ballots))
-           (loop participating-voters new-blacklist)]))))
+           (channel-put recv-chan (invalid-voter-report bad-voter-standings)) 
+           (define updated-ban-record
+             (for/fold ([record banned-voter-record])
+                       ([standing bad-voter-standings])
+               (match-define (voter-standing voter status) standing)
+               (if (or (clean? status) (banned-voter? status))
+                 record
+                 (hash-set record voter status))))
+
+           ;; FIXME the naming convention here ...
+           (define non-voting-voters
+             (for/set ([voter participating-voters]
+                       #:when (not (or (hash-has-key? banned-voter-record voter)
+                                       (hash-has-key? audited-voters voter))))
+               voter))
+               
+
+           (define updated-record-again
+             (for/fold ([record banned-voter-record])
+                       ([voter non-voting-voters])
+               (hash-set record voter (failed-to-vote))))
+
+           (loop participating-voters updated-record-again)]))))
   audit-chan)
 
 ;; Make the Vote Leader thread
@@ -375,24 +379,20 @@
           ;; Determine winner if one candidate has received majority of votes, otherwise begin next round of voting
           ;; (Hashof Name -> Voter) (Hashof Name -> Name) (Hashof Name -> number) -> candidate msg to vote leader
           (define (count-votes voting-record)
+            (printf "Voting record in region ~a: ~a\n" region voting-record)
             (channel-put auditor-chan (audit-ballots audited-votes-chan (map candidate-name (set->list candidates)) voting-record))
             (define audit-payload (channel-get audited-votes-chan))
             (match audit-payload
-              [(invalidated-ballots invalid-ballots)
+              [(invalid-voter-report voter-standings)
                (define invalid-voters
-                 (for/set ([b invalid-ballots])
-                   (match b
-                     [(or (unregistered-voter v)
-                          (not-participating-voter v)
-                          (banned-voter v _)
-                          (multiple-votes v _)
-                          (ineligible-cand v _))
-                      v])))
-               (define valid-ballots (filter (λ (b) (not (set-member? invalid-voters (ballot-voter b)))) voting-record))
+                 (for/set ([standing voter-standings])
+                   (match-define (voter-standing name _status) standing)
+                   name))
+               (define valid-ballots (filter (λ (b) (not (set-member? invalid-voters (vote-voter b)))) voting-record))
                (define votes
                  (for/fold ([votes (hash)])
-                           ([vote valid-ballots])
-                   (match-define (ballot voter cand) vote)
+                           ([valid-vote valid-ballots])
+                   (match-define (vote voter cand) valid-vote)
                    (hash-update votes cand add1 0)))
 
                (define front-runner (argmax (λ (cand) (hash-ref votes (candidate-name cand) 0)) (set->list candidates)))
@@ -414,11 +414,6 @@
             (log-caucus-evt "Candidate ~a has been eliminated from the race in region ~a!" (candidate-name losing-cand) region)
             (run-caucus (set-add candidate-blacklist (candidate-name losing-cand))))
 
-          (define handle-vote
-            (match-lambda
-              [(vote name candidate)
-               (cons (ballot name candidate) voting-record)]))
-
           (define vote-events
             (apply
               choice-evt 
@@ -426,7 +421,7 @@
                 (λ (recv-vote-chan) 
                    (handle-evt 
                      recv-vote-chan
-                     (λ (vote) (voting-loop (handle-vote vote)))))
+                     (λ (vote) (voting-loop (cons vote voting-record)))))
                 (hash-values voting-chan-table))))
 
           (sync 
@@ -435,7 +430,7 @@
               vote-timeout
               (λ (_)
                  (log-caucus-evt "Round of voting in region ~a is over!" region)
-                 (define already-voted (list->set (map ballot-voter voting-record)))
+                 (define already-voted (list->set (map vote-voter voting-record)))
                  (define new-voting-record
                    (for/fold ([voting-record voting-record])
                              ([(voter-name voting-chan) (in-hash voting-chan-table)])
@@ -444,7 +439,7 @@
                       [else
                         (define vote-attempt (channel-try-get voting-chan))
                         (cond
-                          [vote-attempt (handle-vote vote-attempt)]
+                          [vote-attempt (cons vote-attempt voting-record)]
                           [else voting-record])])))
                  (count-votes new-voting-record))))))
 
