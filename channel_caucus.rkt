@@ -288,26 +288,25 @@
                (voter-standing name status)))
 
            (channel-put recv-chan (invalid-voter-report bad-voter-standings)) 
-           (define updated-ban-record
+
+           (define round-violation-updates
              (for/fold ([record banned-voter-record])
                        ([standing bad-voter-standings])
                (match-define (voter-standing voter status) standing)
-               (if (or (clean? status) (banned-voter? status))
-                 record
-                 (hash-set record voter status))))
+               (hash-set record voter status)))
 
            (define non-voting-voters
              (for/set ([voter participating-voters]
-                       #:when (not (or (hash-has-key? banned-voter-record voter)
+                       #:when (not (or (hash-has-key? round-violation-updates voter)
                                        (hash-has-key? audited-voters voter))))
                voter))
 
-           (define updated-record-again
-             (for/fold ([record banned-voter-record])
+           (define updated-ban-record
+             (for/fold ([record round-violation-updates])
                        ([voter non-voting-voters])
                (hash-set record voter (failed-to-vote))))
 
-           (loop participating-voters updated-record-again)]))))
+           (loop participating-voters updated-ban-record)]))))
   audit-chan)
 
 ;; Make the Vote Leader thread
