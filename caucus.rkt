@@ -303,11 +303,16 @@
                         #:when (not (clean? status)))
                 (voter-standing voter status))) 
 
-            ;; TODO voters that voted in error need to be properly added to this set
             (define non-voting-voters
               (set-subtract participating-voters
                             (set-union (list->set (hash-keys (voter-statuses)))
                                            (list->set (hash-keys (banned-voter-record))))))
+
+            (banned-voter-record
+              (for/fold ([bans (banned-voter-record)])
+                        ([standing (in-list report)])
+                (match-define (voter-standing voter status) standing)
+                (hash-set bans voter status)))
 
             (banned-voter-record
               (for/fold ([bans (banned-voter-record)])
