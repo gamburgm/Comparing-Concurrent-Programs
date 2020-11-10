@@ -14,7 +14,7 @@
         { "name": "D", "voting_method": { "type": "stupid_sort", "candidate": "Biden" } },
         { "name": "E", "voting_method": { "type": "stupid_sort", "candidate": "Biden" } },
         { "name": "F", "voting_method": { "type": "stupid_sort", "candidate": "Tulsi" } },
-        { "name": "G", "voting_method": { "type": "stupid_sort", "candidate": "Tulsi" } },
+        { "name": "G", "voting_method": { "type": "stupid_sort", "candidate": "Tulsi" } }
       ]
     }
   ]
