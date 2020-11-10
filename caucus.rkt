@@ -303,16 +303,17 @@
                         #:when (not (clean? status)))
                 (voter-standing voter status))) 
 
-            (define non-voting-voters
-              (set-subtract participating-voters
-                            (set-union (list->set (hash-keys (voter-statuses)))
-                                           (list->set (hash-keys (banned-voter-record))))))
-
             (banned-voter-record
               (for/fold ([bans (banned-voter-record)])
                         ([standing (in-list report)])
                 (match-define (voter-standing voter status) standing)
                 (hash-set bans voter status)))
+
+           (define non-voting-voters
+             (for/set ([voter participating-voters]
+                       #:when (not (or (hash-has-key? banned-voter-record voter)
+                                       (hash-has-key? audited-voters voter))))
+               voter))
 
             (banned-voter-record
               (for/fold ([bans (banned-voter-record)])

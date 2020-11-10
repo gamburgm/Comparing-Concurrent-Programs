@@ -296,13 +296,11 @@
                  record
                  (hash-set record voter status))))
 
-           ;; FIXME the naming convention here ...
            (define non-voting-voters
              (for/set ([voter participating-voters]
                        #:when (not (or (hash-has-key? banned-voter-record voter)
                                        (hash-has-key? audited-voters voter))))
                voter))
-               
 
            (define updated-record-again
              (for/fold ([record banned-voter-record])
