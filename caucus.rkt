@@ -1,12 +1,14 @@
 #lang syndicate/actor
 (require racket/set)
+(require [only-in json write-json])
 (require [only-in racket argmax argmin identity first filter-not])
+(require [only-in racket/function curry])
 (require syndicate/drivers/timestate)
 (require "caucus_struct.rkt")
 
 (provide spawn-candidate spawn-stubborn-candidate spawn-voter spawn-greedy-voter spawn-stubborn-voter
          spawn-leaving-voter spawn-late-joining-voter spawn-not-registered-voter spawn-sleepy-voter
-         spawn-leader spawn-manager stupid-sort)
+         spawn-leader spawn-manager stupid-sort spawn-test-output-collector)
 
 (define (get-one-second-from-now)
   (+ (current-inexact-milliseconds) 1000))
@@ -127,6 +129,11 @@
           (voter-to-candidate (hash-remove (voter-to-candidate) voter))
           (valid-voters (set-remove (valid-voters) voter)))
 
+        ;; Spawn an actor that announces the information regarding the outcome of a round of voting
+        ;; [Hash-of Name Number] (U RoundWinner RoundLoser) -> Actor
+        (define (declare-round-info votes round-result)
+          (spawn (assert (round-info region current-voters current-cands votes round-result))))
+
         (printf "Candidates still in the running in ~a for region ~a: ~a\n" round-id region (still-in-the-running))
         (assert (round round-id region (set->list (still-in-the-running))))
 
@@ -157,6 +164,7 @@
             (on (asserted (later-than one-sec-from-now))
                 (printf "Timeout reached on this round!\n")
                 (valid-voters
+                  ;; FIXME bad
                   (list->set (filter (λ (voter) (hash-has-key? (voter-to-candidate) voter)) (set->list (valid-voters))))))))
 
         (begin/dataflow
@@ -178,6 +186,7 @@
             (cond
               [(> their-votes (/ num-voters 2))
               (printf "Candidate ~a has been elected in region ~a at round ~a!\n" front-runner region round-id)
+              (declare-round-info votes (round-winner front-runner))
               (stop-current-facet
                 (react
                   (assert (elected front-runner region))))]
@@ -189,6 +198,8 @@
                                     (set->list (still-in-the-running))))
                 (printf "The front-runner for ~a in region ~a is ~a! The loser is ~a!\n" round-id region front-runner loser)
                 (define next-candidates (set-intersect (candidates) (set-remove (still-in-the-running) loser)))
+
+                (declare-round-info votes (round-loser loser))
                 (stop-current-facet (run-round next-candidates (valid-voters)))])))))
 
 
@@ -229,7 +240,63 @@
           (stop-current-facet 
             (react 
               (printf "The winner of the election is ~a!\n" winning-candidate)
-              (assert (outbound (winner winning-candidate)))))))))
+              (assert (winner winning-candidate))))))))
+
+;; String -> void
+(define (spawn-test-output-collector output-file-name)
+  (spawn
+    ;; the round-results store the list of RoundInfo in reverse order
+    (field [round-results (hash)]) ;; [Hash-of Region [List-of RoundInfo]]
+
+    (define/query-hash region-winners (elected $winner $region) region winner)
+
+    (on (asserted (round-info $region $voters $cands $tally $result))
+        (round-results
+          (hash-update (round-results)
+                       region
+                       (curry cons (round-info region voters cands tally result))
+                       '())))
+
+    (on (asserted (winner $name))
+      (define round-output
+        (for/list ([(region rounds) (in-hash (round-results))])
+          ;; ASSUME each region that has published round-info has also elected a winner
+          (region->jsexpr region (reverse rounds) (hash-ref (region-winners) region))))
+
+      (with-output-to-file
+        output-file-name
+        (λ () (write-json (hash 'regions round-output 'winner name)))
+        #:exists 'replace))))
+
+;; Convert region information to JSExpr
+;; Region [List-of RoundInfo] Name -> jsexpr
+(define (region->jsexpr region round-info region-winner)
+  (hash 'name region
+        'rounds (map round->jsexpr round-info)
+        'winner region-winner))
+
+;; Convert round information into JSExpr
+;; RoundInfo -> jsexpr
+(define (round->jsexpr round-info)
+  (hash
+    'active_voters (sort (set->list (round-info-voters round-info)) string<?)
+    'active_cands (sort (set->list (round-info-cands round-info)) string<?)
+    'tally (tally->jsexpr (round-info-tally round-info))
+    'result (round-result->jsexpr (round-info-result round-info))))
+
+;; Convert a tally to jsexpr
+;; [Hash-of Name Number] -> [Hash-of Symbol Number]
+(define (tally->jsexpr tally)
+  (for/hash ([(name vote-count) (in-hash tally)])
+    (values (string->symbol name) vote-count)))
+
+;; Convert the outcome of a round to JSExpr
+;; (U RoundWinner RoundLoser) -> jsexpr
+(define (round-result->jsexpr result)
+  (match result
+    [(round-winner winner) (hash 'type "Winner" 'candidate winner)]
+    [(round-loser loser) (hash 'type "Loser" 'candidate loser)]))
+
 
 
 ;; Assumptions made about the manager:
