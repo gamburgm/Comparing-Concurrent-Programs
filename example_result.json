@@ -7,12 +7,12 @@
           "active_voters": ["A", "B", "C", "D", "E", "F", "G"],
           "active_cands": ["Bernie", "Biden", "Tulsi"],
           "tally": { "Bernie": 2, "Biden": 3, "Tulsi": 2 },
-          "result": { "type": "Loser", "candidate": "Bernie" }
+          "result": { "type": "Loser", "candidate": "Tulsi" }
         },
         {
           "active_voters": ["A", "B", "C", "D", "E", "F", "G"],
-          "active_cands": ["Biden", "Tulsi"],
-          "tally": { "Biden": 5, "Tulsi": 2 },
+          "active_cands": ["Bernie", "Biden"],
+          "tally": { "Biden": 5, "Bernie": 2 },
           "result": { "type": "Winner", "candidate": "Biden" }
         }
       ],

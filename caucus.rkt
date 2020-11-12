@@ -179,8 +179,9 @@
 
           (when (= num-voters num-voted)
             (printf "Tallying has begun for ~a in region ~a!\n" round-id region)
+
             (define front-runner (argmax (lambda (n) (hash-ref votes n 0))
-                                        (set->list (still-in-the-running))))
+                                         (sort (set->list (still-in-the-running)) string<?)))
             (define their-votes (hash-ref votes front-runner 0))
             ;; ASSUME: we're OK running a final round with just a single candidate
             (cond
@@ -245,8 +246,7 @@
 ;; String -> void
 (define (spawn-test-output-collector output-file-name)
   (spawn
-    ;; the round-results store the list of RoundInfo in reverse order
-    (field [round-results (hash)]) ;; [Hash-of Region [List-of RoundInfo]]
+    (field [round-results (hash)]) ;; [Hash-of Region [List-of RoundInfo]], where the list is in reverse order
 
     (define/query-hash region-winners (elected $winner $region) region winner)
 
