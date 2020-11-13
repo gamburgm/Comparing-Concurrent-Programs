@@ -376,7 +376,6 @@
           ;; Determine winner if one candidate has received majority of votes, otherwise begin next round of voting
           ;; (Hashof Name -> Voter) (Hashof Name -> Name) (Hashof Name -> number) -> candidate msg to vote leader
           (define (count-votes voting-record)
-            (printf "Voting record in region ~a: ~a\n" region voting-record)
             (channel-put auditor-chan (audit-ballots audited-votes-chan (map candidate-name (set->list candidates)) voting-record))
             (define audit-payload (channel-get audited-votes-chan))
             (match audit-payload
