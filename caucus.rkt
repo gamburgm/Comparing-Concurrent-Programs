@@ -163,14 +163,13 @@
           [(voter-standing name _) name]))
 
       (react
-        (on (asserted (audited-round round-id region $invalid-voter-standings))
-          (define invalid-voters
-            (for/set ([b invalid-voter-standings])
-                     (get-voter-from-standing b)))
+        (on (asserted (audited-round round-id region $voter-standings))
+          (define valid-voters
+            (for/set ([standing voter-standings] #:when (clean? (voter-standing-status standing)))
+                     (voter-standing-name standing)))
 
           (define valid-ballots
-            (for/list ([b ballots]
-                      #:when (not (set-member? invalid-voters (ballot-voter b))))
+            (for/list ([b ballots] #:when (set-member? valid-voters (ballot-voter b)))
                      b))
 
           (define num-votes (length valid-ballots))
@@ -299,20 +298,19 @@
 
           (during (observe (audited-round id region _))
             (define report
-              (for/list ([(voter status) (in-hash (voter-statuses))]
-                        #:when (not (clean? status)))
-                (voter-standing voter status))) 
+              (for/list ([(voter status) (in-hash (voter-statuses))])
+                (voter-standing voter status)))
 
             (banned-voter-record
               (for/fold ([bans (banned-voter-record)])
-                        ([standing (in-list report)])
-                (match-define (voter-standing voter status) standing)
-                (hash-set bans voter status)))
+                        ([standing (in-list report)]
+                         #:unless (clean? (voter-standing-status standing)))
+                (hash-set bans (voter-standing-name standing) (voter-standing-status standing))))
 
            (define non-voting-voters
              (for/set ([voter participating-voters]
-                       #:when (not (or (hash-has-key? banned-voter-record voter)
-                                       (hash-has-key? audited-voters voter))))
+                       #:unless (or (hash-has-key? (banned-voter-record) voter)
+                                    (hash-has-key? (voter-statuses) voter)))
                voter))
 
             (banned-voter-record
