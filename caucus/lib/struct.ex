@@ -59,7 +59,7 @@
 # an AuditVoters is an {:audit_voters, PID, [Set-of Name]}
 # an InvalidatedVoters is an {:invalidated_voters, [Set-of Name]}
 # an AuditBallots is an {:audit_ballots, PID, [Set-of Name], [Set-of Name]}
-# an InvalidatedBallots is an {:invalidated_ballots, [Set-of Name]}
+# an AuditedRound is an {:audited_round, [Set-of VoterOutcome]}
 #
 # a VotingStrategy is a Module with a function that contains a `vote` function with the signature:
 #   Name [Setof Candidate] [Setof Candidate] PID ([Setof Candidate] -> [Setof Candidate]) -> void

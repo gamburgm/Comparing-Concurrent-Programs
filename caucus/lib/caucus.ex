@@ -145,7 +145,7 @@ defmodule Auditor do
       {:audit_ballots, pid, cands, votes} ->
         audited_votes = process_votes(region_voters, participating_voters, violations_so_far, cands, votes)
         new_outcomes = generate_outcomes(audited_votes)
-        send pid, {:invalidated_ballots, Enum.filter(new_outcomes, fn {:outcome, _, outcome} -> invalid_outcome?(outcome) end)}
+        send pid, {:audited_round, new_outcomes}
         loop(region_voters, participating_voters, update_violations(violations_so_far, new_outcomes, participating_voters))
     end
   end
@@ -180,19 +180,6 @@ defmodule Auditor do
       _ -> Map.put(vote_violations, voter, outcome)
     end
   end
-
-  # Is an OutcomeType a ValidOutcome?
-  # OutcomeType -> Boolean
-  defp valid_outcome?(outcome) do
-    case outcome do
-      {:valid, _} -> true
-      _ -> false
-    end
-  end
-
-  # Is an OutcomeType a FailureReason?
-  # OutcomeType -> Boolean
-  defp invalid_outcome?(outcome), do: not valid_outcome?(outcome)
 
   # produce a record associating each voter's name with their corresponding OutcomeType
   # [Set-of Name] [Set-of Name] [Set-of Name] [Hash-of Name FailureReason] [Set-of Name] [List-of Vote] -> [Hash-of Name OutcomeType]
@@ -462,9 +449,9 @@ defmodule VoteLeader do
   defp audit_votes(voter_data, cand_data, cand_registry, auditor, region_manager) do
     send auditor, {:audit_ballots, self(), MapSet.new(Enum.map(cand_data.cands, fn %CandStruct{name: name, tax_rate: _, pid: _} -> name end)), voter_data.votes}
     receive do
-      {:invalidated_ballots, invalid_ballots} ->
-        invalid_voters = Utils.get_voters_from_outcomes(invalid_ballots)
-        valid_votes = Enum.filter(voter_data.votes, fn {:vote, voter, _cand} -> !MapSet.member?(invalid_voters, voter) end)
+      {:audited_round, voter_outcomes} ->
+        valid_voters = Utils.get_voters_from_outcomes(voter_outcomes)
+        valid_votes = Enum.filter(voter_data.votes, fn {:vote, voter, _cand} -> MapSet.member?(valid_voters, voter) end)
         conclude_vote(%{voter_data | votes: valid_votes}, cand_data, cand_registry, auditor, region_manager)
     end
   end
