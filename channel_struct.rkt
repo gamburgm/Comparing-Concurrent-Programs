@@ -54,6 +54,18 @@
 ;; a DeclareWinner is a (declare-winner Name)
 (struct declare-winner (candidate) #:transparent)
 
+;; a DeclareElectionWinner is a (declare-election-winner Name)
+(struct declare-election-winner (candidate) #:transparent)
+
+;; a RoundInfo is a (round-info Region [List-of Name] [List-of Name] [Hash-of Name Number] (U RoundLoser RoundWinner))
+(struct round-info (region voters cands tally result) #:transparent)
+
+;; a RoundLoser is a (round-loser Name)
+(struct round-loser (candidate) #:transparent)
+
+;; a RoundWinner is a (round-winner Name)
+(struct round-winner (candidate) #:transparent)
+
 ;;;;; REGISTRY STRUCTS ;;;;;
 
 ;; a Publish is a (publish Any)
@@ -101,5 +113,8 @@
 ;; 2. Voters reply by picking a name to vote for and sending the Vote Leader a `vote` struct.
 ;; 3. If one candidate has received a majority of votes, then that candidate is elected. If not, the least voted for candidate is removed, and voting begins again.
 ;; 4. At the end of every round of voting, the ballot-results of votes is sent to every Candidate.
+;; 5. At the end of every round of voting, the vote leader notifies the recorder of round information about the outcome of that round of voting, including
+;;    which voters were eligible ot vote, which candidates were eligible to receive votes, the number of votes received by each candidate, and the
+;;    outcome of that round of voting.
 ;; 5. When a candidate wins an election, the Vote Leader publishes that information to the Region Manager. When all caucuses have reported, the majority winner is elected.
 ;;

@@ -360,6 +360,19 @@
               (channel-put main-chan front-runner-names)]
              [else (loop new-results)])])))))
 
+(define (make-json-output-collector)
+  (define round-info-chan (make-channel))
+  (define election-chan (make-channel))
+
+  (thread
+    (thunk
+      (let loop ([round-results (hash)])
+        (sync
+          (handle-evt
+            round-info-chan
+            (match-lambda
+              [(= 
+
 ;; A subscriber used to print information for testing
 (define (make-dummy-subscriber pub-sub-chan)
   (define updates (make-channel))
