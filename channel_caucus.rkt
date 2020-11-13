@@ -282,23 +282,22 @@
            (loop (set-intersect voters-in-region voters) banned-voter-record)]
           [(audit-ballots recv-chan candidates votes)
            (define audited-voters (process-ballots candidates votes))
-           (define bad-voter-standings
-             (for/list ([(name status) (in-hash audited-voters)]
-                        #:when (not (clean? status)))
+           (define standings
+             (for/list ([(name status) (in-hash audited-voters)])
                (voter-standing name status)))
 
-           (channel-put recv-chan (invalid-voter-report bad-voter-standings)) 
+           (channel-put recv-chan (audited-round-report standings)) 
 
            (define round-violation-updates
              (for/fold ([record banned-voter-record])
-                       ([standing bad-voter-standings])
+                       ([standing standings] #:unless (clean? (voter-standing-status standing)))
                (match-define (voter-standing voter status) standing)
                (hash-set record voter status)))
 
            (define non-voting-voters
              (for/set ([voter participating-voters]
-                       #:when (not (or (hash-has-key? round-violation-updates voter)
-                                       (hash-has-key? audited-voters voter))))
+                       #:unless (or (hash-has-key? round-violation-updates voter)
+                                    (hash-has-key? audited-voters voter)))
                voter))
 
            (define updated-ban-record
@@ -379,12 +378,15 @@
             (channel-put auditor-chan (audit-ballots audited-votes-chan (map candidate-name (set->list candidates)) voting-record))
             (define audit-payload (channel-get audited-votes-chan))
             (match audit-payload
-              [(invalid-voter-report voter-standings)
-               (define invalid-voters
-                 (for/set ([standing voter-standings])
-                   (match-define (voter-standing name _status) standing)
-                   name))
-               (define valid-ballots (filter (λ (b) (not (set-member? invalid-voters (vote-voter b)))) voting-record))
+              [(audited-round-report voter-standings)
+               (define valid-voters
+                 (for/set ([standing voter-standings] #:when (clean? (voter-standing-status standing)))
+                          (voter-standing-name standing)))
+
+               (define valid-ballots 
+                 (for/list ([b voting-record] #:when (set-member? valid-voters (vote-voter b)))
+                   b))
+
                (define votes
                  (for/fold ([votes (hash)])
                            ([valid-vote valid-ballots])

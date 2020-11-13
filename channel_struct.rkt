@@ -108,8 +108,8 @@
 ;; an AuditBallots is an (audit-ballots [Chan-of InvalidatedBallots] [Set-of Name] [List-of Ballot])
 (struct audit-ballots (recv-chan candidates votes) #:transparent)
 
-;; an InvalidVoterReport is an (invalid-voter-report [Set-of VoterStanding])
-(struct invalid-voter-report (standings) #:transparent)
+;; an AuditedRoundReport is an (audited-round-report [Set-of VoterStanding])
+(struct audited-round-report (standings) #:transparent)
 
 ;; a VoterStanding is a (voter-standing Name VoterStatus)
 (struct voter-standing (name status) #:transparent)

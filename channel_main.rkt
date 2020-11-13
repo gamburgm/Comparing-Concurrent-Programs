@@ -103,5 +103,6 @@
 ;; TODO wtf is the 'recv-manager-chan'
 (make-region-manager (list "Region1" "Region2" "Region3") candidate-roll (list voter-roll-1 voter-roll-2 voter-roll-3) voter-region-roll recv-manager-chan evt-registration main-channel)
 
+
 (define msg (channel-get main-channel))
 (printf "We have our winners! ~a\n" msg)
