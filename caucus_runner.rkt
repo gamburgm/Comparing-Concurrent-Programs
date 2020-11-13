@@ -1,27 +1,41 @@
 #lang syndicate/actor
 
+;; NOTE types are defined in `test_harness.md`
+
 (require json)
 (require "caucus.rkt")
 (require/activate syndicate/drivers/timestate)
 
-(define test-input "example_test.json")
+;; test -> void
+(define (initialize-test test output-file)
+  (for ([candidate (in-list (hash-ref test 'candidates))])
+    (initialize-candidate candidate))
 
-(define test (read-json (open-input-file test-input)))
+  (for ([region (in-list (hash-ref test 'regions))])
+    (initialize-region region))
 
-(for ([candidate (in-list (hash-ref test 'candidates))])
-  ;; TODO break this into helper functions
+  (spawn-manager (map (λ (region) (hash-ref region 'name)) (hash-ref test 'regions)))
+  (spawn-test-output-collector output-file))
+
+;; candidate -> void
+(define (initialize-candidate candidate)
   (spawn-candidate (hash-ref candidate 'name)
                    (hash-ref candidate 'tax_rate)
                    (hash-ref candidate 'threshold)))
 
-(for ([region (in-list (hash-ref test 'regions))])
+;; region -> void
+(define (initialize-region region)
   (define region-name (hash-ref region 'name))
   (for ([voter (in-list (hash-ref region 'voters))])
-    ;; TODO break this into helper functions
-    (spawn-voter (hash-ref voter 'name)
-                 region-name
-                 (stupid-sort (hash-ref (hash-ref voter 'voting_method) 'candidate)))))
+    (initialize-voter voter region-name)))
 
-(spawn-manager (map (λ (region) (hash-ref region 'name)) (hash-ref test 'regions)))
+;; voter string -> void
+(define (initialize-voter voter region-name)
+  (spawn-voter (hash-ref voter 'name)
+               region-name
+               (stupid-sort (hash-ref (hash-ref voter 'voting_method) 'candidate))))
 
-(spawn-test-output-collector "syndicate_output.json")
+(define test-input "example_test.json")
+(define test (read-json (open-input-file test-input)))
+
+(initialize-test test "syndicate_output.json")
