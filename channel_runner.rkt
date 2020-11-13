@@ -12,7 +12,7 @@
 
 (for ([candidate (in-list (hash-ref test 'candidates))])
   (make-candidate (hash-ref candidate 'name)
-                  (hash-ref candidate 'tax-rate)
+                  (hash-ref candidate 'tax_rate)
                   (hash-ref candidate 'threshold)
                   candidate-registration))
 
