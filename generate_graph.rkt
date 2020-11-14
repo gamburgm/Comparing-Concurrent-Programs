@@ -30,7 +30,7 @@
 
 (define (plot-changes lang input-file program)
   (define file-size (length (file->lines program)))
-  (define plot-width (* 50 (ceiling (/ file-size 50))))
+  (define approx-size (* 50 (ceiling (/ file-size 50))))
   (define output-file (format "~a.jpeg" lang))
   
   (define graph-title (format "~a Diff Visualized" (capitalize-string lang)))
@@ -44,7 +44,7 @@
 
   (parameterize ([plot-x-tick-label-anchor 'top-right]
                  [plot-x-tick-label-angle 90]
-                 [plot-width plot-width]
+                 [plot-width approx-size]
                  [plot-x-ticks (create-x-ticks file-size)]
                  [plot-x-far-ticks no-ticks]
                  [plot-y-far-ticks no-ticks])
