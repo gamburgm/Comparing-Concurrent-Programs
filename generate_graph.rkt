@@ -1,9 +1,10 @@
 #lang racket
 
-(require syntax/parse/define)
 (require racket/cmdline)
 (require plot/no-gui)
+(require "parse_diff.rkt")
 
+;; FIXME get the max lengths of all three files and use that for the y-axis
 ;; TODO
 ;; How should the CLI work?
 ;; 1. you should specify the label as a command-line argument
@@ -36,11 +37,10 @@
   (define graph-title (format "~a Diff Visualized" (capitalize-string lang)))
 
   (define change-rectangles
-    (for/list ([line (file->lines input-file)])
-      (define change-info (string-split line ","))
-      (define x-pos (string->number (first change-info)))
-      (define y-pos (string->number (second change-info)))
-      (vector (ivl x-pos (+ x-pos 1)) (ivl 0 y-pos))))
+    (for/list ([change (in-list (parse-diff-file input-file))])
+      (define start (diff-line change))
+      (define size (diff-size change))
+      (vector (ivl start (+ start 1)) (ivl 0 size))))
 
   (parameterize ([plot-x-tick-label-anchor 'top-right]
                  [plot-x-tick-label-angle 90]
