@@ -1,7 +1,6 @@
 #!/bin/sh
 
-diff --old-group-format='d%dF,%dn
-' --new-group-format='a%dF,%dN
-' --unchanged-group-format='' --changed-group-format='c%dF,a%dN,d%dn
-'  $1 $2
+diff -b --old-group-format='' --new-group-format='%dF,%dN
+' --unchanged-group-format='' --changed-group-format='%dF,%dN
+' $1 $2
 
