@@ -1,6 +1,6 @@
 #lang racket
 
-(provide candidate candidate-name candidate-results-chan drop-out loser voter voter-name voter-voting-chan request-msg request-voters request-vote vote ballot-results all-candidates all-voters declare-leader declare-manager declare-winner publish withdraw subscribe message payload)
+(provide candidate candidate-name candidate-results-chan drop-out loser voter voter-name voter-voting-chan request-msg request-voters request-vote vote ballot-results all-candidates all-voters declare-leader declare-manager declare-winner publish withdraw subscribe message payload declare-election-winner (struct-out round-info) round-winner round-loser)
 
 ;; a Name is a string
 
@@ -52,7 +52,7 @@
 (struct declare-manager (results-chan) #:transparent)
 
 ;; a DeclareWinner is a (declare-winner Name)
-(struct declare-winner (candidate) #:transparent)
+(struct declare-winner (region candidate) #:transparent)
 
 ;; a DeclareElectionWinner is a (declare-election-winner Name)
 (struct declare-election-winner (candidate) #:transparent)

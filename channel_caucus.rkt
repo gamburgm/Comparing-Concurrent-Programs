@@ -1,8 +1,9 @@
 #lang racket
 (require racket/set)
+(require [only-in json write-json])
 (require "channel_struct.rkt")
 
-(provide make-abstract-registry make-candidate make-stubborn-candidate make-voter make-greedy-voter make-stubborn-voter make-sleepy-voter make-vote-leader make-region-manager stupid-sort)
+(provide make-abstract-registry make-candidate make-stubborn-candidate make-voter make-greedy-voter make-stubborn-voter make-sleepy-voter make-vote-leader make-region-manager stupid-sort make-json-output-collector)
 
 (define caucus-log (make-logger 'caucus (current-logger)))
 
@@ -182,7 +183,7 @@
 
 ;; Make the Vote Leader thread
 ;; Region Chan Chan Chan -> vote leader thread
-(define (make-vote-leader region candidate-registry voter-registry results-chan)
+(define (make-vote-leader region candidate-registry voter-registry results-chan results-collect-chan)
   (define retrieve-candidates-chan (make-channel))
   (define retrieve-voters-chan (make-channel))
   (define voting-chan (make-channel))
@@ -330,7 +331,8 @@
         
       (define winner (run-caucus (set) (set)))
       (log-caucus-evt "We have a winner ~a in region ~a!" (candidate-name winner) region)
-      (channel-put results-chan (declare-winner (candidate-name winner))))))
+      (channel-put results-chan (declare-winner region (candidate-name winner)))
+      (channel-put results-collect-chan (declare-winner region (candidate-name winner))))))
 
 ;; remove declaration behavior
 ;; add a list of regions as an argument to the region-manager
@@ -338,17 +340,17 @@
 
 ;; Create a region-manager thread and channel
 ;; Chan -> winner announcement
-(define (make-region-manager regions candidate-registry voter-registries main-chan)
+(define (make-region-manager regions candidate-registry voter-registries main-chan collect-rounds-chan collect-election-chan)
   (define results-chan (make-channel))
   (thread
     (thunk
       (for ([region regions]
             [registry voter-registries])
-        (make-vote-leader region candidate-registry registry results-chan))
+        (make-vote-leader region candidate-registry registry results-chan collect-rounds-chan))
       (let loop ([caucus-results (hash)])
         (define region-winner (channel-get results-chan))
         (match region-winner
-          [(declare-winner candidate)
+          [(declare-winner region candidate)
            (define new-results (hash-update caucus-results candidate add1 0))
            (define num-winners (for/sum ([num-of-votes (in-hash-values new-results)]) num-of-votes))
            (cond
@@ -357,21 +359,83 @@
               (define front-runners (filter (λ (pair) (= most-votes (cdr pair))) (hash->list new-results)))
               (define front-runner-names (map (λ (cand) (car cand)) front-runners))
               (log-caucus-evt "The candidates with the most votes across the regions are ~a!" front-runner-names)
+              (channel-put collect-election-chan (declare-election-winner (first front-runner-names)))
               (channel-put main-chan front-runner-names)]
              [else (loop new-results)])])))))
 
-(define (make-json-output-collector)
+;; NOTE changes made worth reconsidering:
+;; 1. the `declare-winner` struct is sent to both this component and manager
+;; 2. the `declare-winner` struct has an added region field
+;; 3. assumption is made that there's only one frontrunner in the region manager
+;; 4. both channels (which are named poorly) are passed to the region manager who uses one and passes the other to leaders
+;; 5. there are a lot of struct and accessor identifiers provided with the structs now added for the JSON parser, particularly round-info-*
+(define (make-json-output-collector output-file-name)
   (define round-info-chan (make-channel))
   (define election-chan (make-channel))
 
   (thread
     (thunk
-      (let loop ([round-results (hash)])
+      (let loop ([round-results (hash)]
+                 [region-winners (hash)])
         (sync
           (handle-evt
             round-info-chan
+            (λ (msg)
+              (match msg
+                [(round-info region voters cands tally result)
+                 (loop (hash-update round-results
+                                    region
+                                    (curry cons msg)
+                                    '())
+                       region-winners)]
+                [(declare-winner region winner)
+                 (loop round-results (hash-set region-winners region winner))])))
+          (handle-evt
+            election-chan
             (match-lambda
-              [(= 
+              [(declare-election-winner winner)
+               (write-results-as-json round-results region-winners winner output-file-name)]))))))
+
+  (values round-info-chan election-chan))
+
+(define (write-results-as-json results region-winners winner filename)
+  (define round-output
+    (for/list ([(region rounds) (in-hash results)])
+      (region->jsexpr region (reverse rounds) (hash-ref region-winners region))))
+
+  (with-output-to-file
+    filename
+    (λ () (write-json (hash 'regions round-output 'winner winner)))
+    #:exists 'replace))
+
+;; Convert region information to JSExpr
+;; Region [List-of RoundInfo] Name -> jsexpr
+(define (region->jsexpr region round-info region-winner)
+  (hash 'name region
+        'rounds (map round->jsexpr round-info)
+        'winner region-winner))
+
+;; Convert round information into JSExpr
+;; RoundInfo -> jsexpr
+(define (round->jsexpr round-info)
+  (hash
+    'active_voters (sort (set->list (round-info-voters round-info)) string<?)
+    'active_cands (sort (set->list (round-info-cands round-info)) string<?)
+    'tally (tally->jsexpr (round-info-tally round-info))
+    'result (round-result->jsexpr (round-info-result round-info))))
+
+;; Convert a tally to jsexpr
+;; [Hash-of Name Number] -> [Hash-of Symbol Number]
+(define (tally->jsexpr tally)
+  (for/hash ([(name vote-count) (in-hash tally)])
+    (values (string->symbol name) vote-count)))
+
+;; Convert the outcome of a round to JSExpr
+;; (U RoundWinner RoundLoser) -> jsexpr
+(define (round-result->jsexpr result)
+  (match result
+    [(round-winner winner) (hash 'type "Winner" 'candidate winner)]
+    [(round-loser loser) (hash 'type "Loser" 'candidate loser)]))
 
 ;; A subscriber used to print information for testing
 (define (make-dummy-subscriber pub-sub-chan)
