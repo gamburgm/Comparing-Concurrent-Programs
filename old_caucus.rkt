@@ -120,13 +120,11 @@
       (react
         (field [valid-voters current-voters]
                [still-in-the-running current-cands]
-               [voter-to-candidate (hash)]
-               [votes (hash)])
+               [voter-to-candidate (hash)])
 
         (define (invalidate-voter voter)
           (printf "Voter ~a in region ~a is now an invalid voter!\n" voter region)
-          (when (hash-has-key? (voter-to-candidate) voter)
-            (votes (hash-update (votes) (hash-ref (voter-to-candidate) voter) sub1)))
+          (voter-to-candidate (hash-remove (voter-to-candidate) voter))
           (valid-voters (set-remove (valid-voters) voter)))
 
         (printf "Candidates still in the running in ~a for region ~a: ~a\n" round-id region (still-in-the-running))
@@ -150,8 +148,7 @@
                  (invalidate-voter who)]
                 [else 
                   (printf "Voter ~a has voted for candidate ~a in ~a in region ~a!\n" who for round-id region)
-                  (voter-to-candidate (hash-set (voter-to-candidate) who for))
-                  (votes (hash-update (votes) for add1 0))])))
+                  (voter-to-candidate (hash-set (voter-to-candidate) who for))])))
 
         (on-start
           (react
@@ -163,15 +160,20 @@
                   (list->set (filter (λ (voter) (hash-has-key? (voter-to-candidate) voter)) (set->list (valid-voters))))))))
 
         (begin/dataflow
+          (define votes
+            (for/fold ([votes (hash)])
+                      ([(voter cand) (in-hash (voter-to-candidate))])
+              (hash-update votes cand add1 0)))
+
           (define num-voters (set-count (valid-voters)))
-          (define num-voted (for/sum ([votes (in-hash-values (votes))])
+          (define num-voted (for/sum ([votes (in-hash-values votes)])
                               votes))
 
           (when (= num-voters num-voted)
             (printf "Tallying has begun for ~a in region ~a!\n" round-id region)
-            (define front-runner (argmax (lambda (n) (hash-ref (votes) n 0))
+            (define front-runner (argmax (lambda (n) (hash-ref votes n 0))
                                         (set->list (still-in-the-running))))
-            (define their-votes (hash-ref (votes) front-runner 0))
+            (define their-votes (hash-ref votes front-runner 0))
             ;; ASSUME: we're OK running a final round with just a single candidate
             (cond
               [(> their-votes (/ num-voters 2))
@@ -181,9 +183,9 @@
                   (assert (elected front-runner region))))]
               [else
                 (for ([candidate (in-set (candidates))])
-                  (send! (tally candidate region (hash-ref (votes) candidate 0))))
+                  (send! (tally candidate region (hash-ref votes candidate 0))))
 
-                (define loser (argmin (lambda (n) (hash-ref (votes) n 0))
+                (define loser (argmin (lambda (n) (hash-ref votes n 0))
                                     (set->list (still-in-the-running))))
                 (printf "The front-runner for ~a in region ~a is ~a! The loser is ~a!\n" round-id region front-runner loser)
                 (define next-candidates (set-intersect (candidates) (set-remove (still-in-the-running) loser)))

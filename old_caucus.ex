@@ -206,7 +206,6 @@ defmodule VoteLeader do
     if !(Enum.empty?(voters) || Enum.empty?(candidates)) do
       valid_candidates = MapSet.difference(candidates, blacklist)
       issue_votes(voters, valid_candidates)
-      initial_tally = Enum.reduce(valid_candidates, %{}, fn cand, acc -> Map.put(acc, cand.name, 0) end)
       voter_lookup = Enum.reduce(voters, %{}, fn voter, acc -> Map.put(acc, voter.name, voter) end)
       Process.send_after self(), :timeout, 1000
 
@@ -216,7 +215,6 @@ defmodule VoteLeader do
           cands: valid_candidates, 
           lookup: Enum.reduce(valid_candidates, %{}, fn cand, acc -> Map.put(acc, cand.name, cand) end), 
           blacklist: blacklist, 
-          tally: initial_tally
         },
         candidate_registry,
         region_manager
@@ -258,16 +256,13 @@ defmodule VoteLeader do
             !Map.has_key?(cand_data.lookup, cand_name) || Map.has_key?(voter_data.votes, voter_name) ->
               IO.puts "Voter #{inspect voter_name} has been caught trying to vote for a dropped candidate!"
 
-              new_vote_count = if Map.has_key?(cand_data.lookup, voter_data.votes[voter_name]), do: cand_data.tally[voter_data.votes[voter_name]] - 1, else: 0
-              new_tally = Map.put(cand_data.tally, voter_data.lookup[voter_name], new_vote_count)
-
               vote_loop(
                 %VoterData{
                   voters: MapSet.delete(voter_data.voters, voter_data.lookup[voter_name]),
                   lookup: Map.delete(voter_data.lookup, voter_name),
                   votes:  Map.delete(voter_data.votes, voter_name)
                 },
-                %{cand_data | tally: new_tally},
+                cand_data,
                 cand_registry,
                 region_manager
               )
@@ -275,11 +270,10 @@ defmodule VoteLeader do
             true ->
               IO.puts "Voter #{inspect voter_name} is voting for candidate #{inspect cand_name}!"
               new_voting_record = Map.put(voter_data.votes, voter_name, cand_name)
-              new_tally = Map.update(cand_data.tally, cand_name, 1, &(&1 + 1))
 
               vote_loop(
                 %{voter_data | votes: new_voting_record},
-                %{cand_data  | tally: new_tally},
+                cand_data,
                 cand_registry, 
                 region_manager
               )
@@ -292,15 +286,18 @@ defmodule VoteLeader do
   # Determine a winner, or if there isn't one, remove a loser and start next voting loop
   # VoterData CandData PID PID -> void
   defp conclude_vote(voter_data, cand_data, cand_registry, region_manager) do
+    initial_tally = Enum.reduce(cand_data.cands, %{}, fn %CandStruct{name: cand_name, tax_rate: _, pid: _}, init -> Map.put(init, cand_name, 0) end)
+    tally = Enum.reduce(voter_data.votes, initial_tally, fn {_, cand_name}, curr_tally -> Map.update!(curr_tally, cand_name, &(&1 + 1)) end)
+
     confirmed_voters = Enum.reduce(voter_data.votes, MapSet.new, fn {voter_name, _}, acc -> MapSet.put(acc, voter_data.lookup[voter_name]) end)
-    num_votes = Enum.reduce(cand_data.tally, 0, fn {_, count}, acc -> acc + count end)
-    {frontrunner, their_votes} = Enum.max(cand_data.tally, fn {_, count1}, {_, count2} -> count1 >= count2 end)
+    num_votes = Enum.reduce(tally, 0, fn {_, count}, acc -> acc + count end)
+    {frontrunner, their_votes} = Enum.max(tally, fn {_, count1}, {_, count2} -> count1 >= count2 end)
     IO.puts "The frontrunner received #{their_votes} votes, out of #{num_votes} total votes"
     if their_votes > (num_votes / 2) do
       send region_manager, {:caucus_winner, frontrunner}
     else
-      {loser, _} = Enum.min(cand_data.tally, fn {_, count1}, {_, count2} -> count1 <= count2 end)
-      Enum.each(cand_data.cands, fn %CandStruct{name: _, tax_rate: _, pid: pid} -> send pid, {:tally, cand_data.tally} end)
+      {loser, _} = Enum.min(tally, fn {_, count1}, {_, count2} -> count1 <= count2 end)
+      Enum.each(cand_data.cands, fn %CandStruct{name: _, tax_rate: _, pid: pid} -> send pid, {:tally, tally} end)
       %CandStruct{name: _, tax_rate: _, pid: losing_pid} = cand_data.lookup[loser]
       send losing_pid, :loser
       IO.puts "Our loser is #{loser}!"
