@@ -1,7 +1,6 @@
-notes.md
 .nvimrc
 *.txt
-throwaway.exs
+*.jpeg
 
 # The directory Mix will write compiled artifacts to.
 caucus/_build/
