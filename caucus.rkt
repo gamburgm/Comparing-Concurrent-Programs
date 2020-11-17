@@ -196,7 +196,7 @@
                   (send! (tally candidate region (hash-ref votes candidate 0))))
 
                 (define loser (argmin (lambda (n) (hash-ref votes n 0))
-                                    (set->list (still-in-the-running))))
+                                      (sort (set->list (still-in-the-running)) string<?)))
                 (printf "The front-runner for ~a in region ~a is ~a! The loser is ~a!\n" round-id region front-runner loser)
                 (define next-candidates (set-intersect (candidates) (set-remove (still-in-the-running) loser)))
 

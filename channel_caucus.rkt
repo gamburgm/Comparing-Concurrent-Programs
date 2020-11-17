@@ -247,6 +247,14 @@
         (let voting-loop ([voter-blacklist voter-blacklist]
                           [voting-record (hash)])
 
+          (define (send-round-info votes result)
+            (channel-put results-collect-chan
+                         (round-info region
+                                     (map voter-name (set->list voters))
+                                     (map candidate-name (set->list candidates))
+                                     votes
+                                     result)))
+
           ;; Determine winner if one candidate has received majority of votes, otherwise begin next round of voting
           ;; (Hashof Name -> Voter) (Hashof Name -> Name) (Hashof Name -> number) -> candidate msg to vote leader
           (define (count-votes voter-blacklist voting-record)
@@ -256,16 +264,20 @@
             (cond
               [(> their-votes (/ (hash-count voting-record) 2))
                (log-caucus-evt "Candidate ~a has been elected in region ~a!" (candidate-name front-runner) region)
+               (send-round-info votes (round-winner (candidate-name front-runner)))
                front-runner]
               [else (next-round voter-blacklist voting-record votes)]))
 
           ;; Remove the worst-performing candidate from the race and re-run caucus
           ;; (Hashof Name -> Voter) (Hashof Name -> Name) (Hashof Name -> number) -> candidate msg to vote leader
           (define (next-round voter-blacklist voting-record votes)
-            (define losing-cand (argmin (λ (cand) (hash-ref votes (candidate-name cand) 0)) (set->list candidates)))
+            (define sorted-cands (sort (set->list candidates) (λ (c1 c2) (string<? (candidate-name c1) (candidate-name c2)))))
+            (define losing-cand (argmin (λ (cand) (hash-ref votes (candidate-name cand) 0)) sorted-cands))
             (for ([cand-struct candidates]) 
               (channel-put (candidate-results-chan cand-struct) (ballot-results votes)))
             (channel-put (candidate-results-chan losing-cand) (loser (candidate-name losing-cand)))
+
+            (send-round-info votes (round-loser (candidate-name losing-cand)))
 
             (log-caucus-evt "Candidate ~a has been eliminated from the race in region ~a!" (candidate-name losing-cand) region)
             (run-caucus (set-add candidate-blacklist (candidate-name losing-cand)) voter-blacklist))
@@ -331,8 +343,8 @@
         
       (define winner (run-caucus (set) (set)))
       (log-caucus-evt "We have a winner ~a in region ~a!" (candidate-name winner) region)
-      (channel-put results-chan (declare-winner region (candidate-name winner)))
-      (channel-put results-collect-chan (declare-winner region (candidate-name winner))))))
+      (channel-put results-collect-chan (declare-winner region (candidate-name winner)))
+      (channel-put results-chan (declare-winner region (candidate-name winner))))))
 
 ;; remove declaration behavior
 ;; add a list of regions as an argument to the region-manager
