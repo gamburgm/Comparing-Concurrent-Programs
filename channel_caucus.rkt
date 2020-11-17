@@ -406,48 +406,9 @@
             election-chan
             (match-lambda
               [(declare-election-winner winner)
-               (write-results-as-json round-results region-winners winner output-file-name)]))))))
+               (write-results-to-file round-results region-winners winner output-file-name)]))))))
 
   (values round-info-chan election-chan))
-
-(define (write-results-as-json results region-winners winner filename)
-  (define round-output
-    (for/list ([(region rounds) (in-hash results)])
-      (region->jsexpr region (reverse rounds) (hash-ref region-winners region))))
-
-  (with-output-to-file
-    filename
-    (λ () (write-json (hash 'regions round-output 'winner winner)))
-    #:exists 'replace))
-
-;; Convert region information to JSExpr
-;; Region [List-of RoundInfo] Name -> jsexpr
-(define (region->jsexpr region round-info region-winner)
-  (hash 'name region
-        'rounds (map round->jsexpr round-info)
-        'winner region-winner))
-
-;; Convert round information into JSExpr
-;; RoundInfo -> jsexpr
-(define (round->jsexpr round-info)
-  (hash
-    'active_voters (sort (set->list (round-info-voters round-info)) string<?)
-    'active_cands (sort (set->list (round-info-cands round-info)) string<?)
-    'tally (tally->jsexpr (round-info-tally round-info))
-    'result (round-result->jsexpr (round-info-result round-info))))
-
-;; Convert a tally to jsexpr
-;; [Hash-of Name Number] -> [Hash-of Symbol Number]
-(define (tally->jsexpr tally)
-  (for/hash ([(name vote-count) (in-hash tally)])
-    (values (string->symbol name) vote-count)))
-
-;; Convert the outcome of a round to JSExpr
-;; (U RoundWinner RoundLoser) -> jsexpr
-(define (round-result->jsexpr result)
-  (match result
-    [(round-winner winner) (hash 'type "Winner" 'candidate winner)]
-    [(round-loser loser) (hash 'type "Loser" 'candidate loser)]))
 
 ;; A subscriber used to print information for testing
 (define (make-dummy-subscriber pub-sub-chan)
