@@ -1,6 +1,6 @@
 #lang racket
 
-(provide candidate candidate-name candidate-results-chan drop-out loser voter voter-name voter-voting-chan request-msg request-voters request-vote vote ballot-results all-candidates all-voters declare-leader declare-manager declare-winner publish withdraw subscribe message payload declare-election-winner)
+(provide candidate candidate-name candidate-results-chan drop-out loser voter voter-name voter-voting-chan request-msg request-voters request-vote vote ballot-results all-candidates all-voters declare-leader declare-manager declare-winner publish withdraw subscribe message payload declare-election-winner end-signal)
 
 ;; a Name is a string
 
@@ -56,6 +56,9 @@
 
 ;; a DeclareElectionWinner is a (declare-election-winner Name)
 (struct declare-election-winner (candidate) #:transparent)
+
+;; an EndSignal is an (end-signal)
+(struct end-signal () #:transparent)
 
 ;;;;; REGISTRY STRUCTS ;;;;;
 

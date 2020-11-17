@@ -9,7 +9,7 @@
 
 (define main-channel (make-channel))
 (define-values (candidate-registration candidate-roll) (make-abstract-registry))
-(define-values (collect-rounds-chan collect-election-chan) (make-json-output-collector "channel.json"))
+(define-values (collect-rounds-chan collect-election-chan) (make-json-output-collector main-channel "channel.json"))
 
 (for ([candidate (in-list (hash-ref test 'candidates))])
   (make-candidate (hash-ref candidate 'name)
@@ -30,9 +30,6 @@
                   candidate-roll))
     (cons voter-roll voter-rolls)))
 
-(make-region-manager (map (λ (region) (hash-ref region 'name)) (hash-ref test 'regions)) candidate-roll voter-rolls main-channel collect-rounds-chan collect-election-chan)
+(make-region-manager (map (λ (region) (hash-ref region 'name)) (hash-ref test 'regions)) candidate-roll voter-rolls collect-rounds-chan collect-election-chan)
 
-(define msg (channel-get main-channel))
-(printf "We have our winners! ~a\n" msg)
-
-(sleep 10)
+(define run-completed (channel-get main-channel))

@@ -352,7 +352,7 @@
 
 ;; Create a region-manager thread and channel
 ;; Chan -> winner announcement
-(define (make-region-manager regions candidate-registry voter-registries main-chan collect-rounds-chan collect-election-chan)
+(define (make-region-manager regions candidate-registry voter-registries collect-rounds-chan collect-election-chan)
   (define results-chan (make-channel))
   (thread
     (thunk
@@ -367,21 +367,14 @@
            (define num-winners (for/sum ([num-of-votes (in-hash-values new-results)]) num-of-votes))
            (cond
              [(= num-winners (length regions))
-              (define most-votes (cdr (argmax (λ (pair) (cdr pair)) (hash->list new-results))))
-              (define front-runners (filter (λ (pair) (= most-votes (cdr pair))) (hash->list new-results)))
-              (define front-runner-names (map (λ (cand) (car cand)) front-runners))
-              (log-caucus-evt "The candidates with the most votes across the regions are ~a!" front-runner-names)
-              (channel-put collect-election-chan (declare-election-winner (first front-runner-names)))
-              (channel-put main-chan front-runner-names)]
+              ;; ASSUME there is no tie for first place
+              (define front-runner (car (argmax cdr (hash->list new-results))))
+              (log-caucus-evt "The victorious candidate is ~a!" front-runner)
+              (channel-put collect-election-chan (declare-election-winner front-runner))
+              (printf "We have our winner! ~a\n" front-runner)]
              [else (loop new-results)])])))))
 
-;; NOTE changes made worth reconsidering:
-;; 1. the `declare-winner` struct is sent to both this component and manager
-;; 2. the `declare-winner` struct has an added region field
-;; 3. assumption is made that there's only one frontrunner in the region manager
-;; 4. both channels (which are named poorly) are passed to the region manager who uses one and passes the other to leaders
-;; 5. there are a lot of struct and accessor identifiers provided with the structs now added for the JSON parser, particularly round-info-*
-(define (make-json-output-collector output-file-name)
+(define (make-json-output-collector main-chan output-file-name)
   (define round-info-chan (make-channel))
   (define election-chan (make-channel))
 
@@ -406,7 +399,8 @@
             election-chan
             (match-lambda
               [(declare-election-winner winner)
-               (write-results-to-file round-results region-winners winner output-file-name)]))))))
+               (write-results-to-file round-results region-winners winner output-file-name)
+               (channel-put main-chan (end-signal))]))))))
 
   (values round-info-chan election-chan))
 
