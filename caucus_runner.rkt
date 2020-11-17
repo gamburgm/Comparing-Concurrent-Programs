@@ -6,16 +6,20 @@
 (require "caucus.rkt")
 (require/activate syndicate/drivers/timestate)
 
-;; test -> void
-(define (initialize-test test output-file)
-  (for ([candidate (in-list (hash-ref test 'candidates))])
-    (initialize-candidate candidate))
+(define (create-candidate jscand)
+  (spawn-candidate (hash-ref jscand 'name)
+                   (hash-ref jscand 'tax_rate)
+                   (hash-ref jscand 'threshold)))
 
-  (for ([region (in-list (hash-ref test 'regions))])
-    (initialize-region region))
+(define (create-voter jsvoter region-name)
+  (spawn-voter (hash-ref voter 'name)
+               region-name
+               (stupid-sort (hash-ref (hash-ref voter 'voting_method) 'candidate))))
+
+(define (create-manager 
+
 
   (spawn-manager (map (λ (region) (hash-ref region 'name)) (hash-ref test 'regions)))
-  (spawn-test-output-collector output-file))
 
 ;; candidate -> void
 (define (initialize-candidate candidate)
