@@ -1,6 +1,6 @@
 #lang syndicate/actor
 
-(provide voter vote round candidate candidate-name tally elected winner (struct-out round-info) round-winner round-loser)
+(provide voter vote round candidate candidate-name tally elected winner)
 
 ;; a Name is a (caucus-unique) String
 
@@ -35,15 +35,6 @@
 
 ;; a Winner is a (winner Name)
 (assertion-struct winner (name))
-
-;; a RoundInfo is a (round-info Region [Set-of Name] [Set-of Name] [Hash-of Name Number] (U RoundLoser RoundWinner))
-(assertion-struct round-info (region voters cands tally result))
-
-;; a RoundLoser is a (round-loser Name) where the name is the name of a candidate
-(assertion-struct round-loser (name))
-
-;; a RoundWinner is a (round-winner Name) where the name is the name of a candidate
-(assertion-struct round-winner (name))
 
 ;; There are four actor roles:
 ;; - Caucus Leaders

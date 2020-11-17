@@ -1,10 +1,10 @@
 #lang syndicate/actor
 (require racket/set)
-(require [only-in json write-json])
 (require [only-in racket argmax argmin identity first filter-not])
 (require [only-in racket/function curry])
 (require syndicate/drivers/timestate)
 (require "caucus_struct.rkt")
+(require "generate_json.rkt")
 
 (provide spawn-candidate spawn-stubborn-candidate spawn-voter spawn-greedy-voter spawn-stubborn-voter
          spawn-leaving-voter spawn-late-joining-voter spawn-not-registered-voter spawn-sleepy-voter
@@ -258,50 +258,4 @@
                        '())))
 
     (on (asserted (winner $name))
-      (define round-output
-        (for/list ([(region rounds) (in-hash (round-results))])
-          ;; ASSUME each region that has published round-info has also elected a winner
-          (region->jsexpr region (reverse rounds) (hash-ref (region-winners) region))))
-
-      (with-output-to-file
-        output-file-name
-        (λ () (write-json (hash 'regions round-output 'winner name)))
-        #:exists 'replace))))
-
-;; Convert region information to JSExpr
-;; Region [List-of RoundInfo] Name -> jsexpr
-(define (region->jsexpr region round-info region-winner)
-  (hash 'name region
-        'rounds (map round->jsexpr round-info)
-        'winner region-winner))
-
-;; Convert round information into JSExpr
-;; RoundInfo -> jsexpr
-(define (round->jsexpr round-info)
-  (hash
-    'active_voters (sort (set->list (round-info-voters round-info)) string<?)
-    'active_cands (sort (set->list (round-info-cands round-info)) string<?)
-    'tally (tally->jsexpr (round-info-tally round-info))
-    'result (round-result->jsexpr (round-info-result round-info))))
-
-;; Convert a tally to jsexpr
-;; [Hash-of Name Number] -> [Hash-of Symbol Number]
-(define (tally->jsexpr tally)
-  (for/hash ([(name vote-count) (in-hash tally)])
-    (values (string->symbol name) vote-count)))
-
-;; Convert the outcome of a round to JSExpr
-;; (U RoundWinner RoundLoser) -> jsexpr
-(define (round-result->jsexpr result)
-  (match result
-    [(round-winner winner) (hash 'type "Winner" 'candidate winner)]
-    [(round-loser loser) (hash 'type "Loser" 'candidate loser)]))
-
-
-
-;; Assumptions made about the manager:
-;; Every elected announcement is valid
-;; The manager is up and running and properly configured before voting begins (there is now 'begin voting' announcement made by the manager)
-;; no leader makes multiple elected announcements
-
-;; Candidates do actually drop per caucus. Nice.
+        (write-results-to-file (round-results) (region-winners) name output-file-name))))
