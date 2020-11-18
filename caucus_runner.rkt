@@ -20,10 +20,6 @@
   (spawn-voter (hash-ref jsvoter 'name)
                region-name
                (stupid-sort (hash-ref (hash-ref jsvoter 'voting_method)
-                                      'candidate))))
-
-(define (create-manager regions)
-  (spawn-manager regions))
 
 (initialize-test INPUT-FILE
                  OUTPUT-FILE
