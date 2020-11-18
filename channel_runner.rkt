@@ -3,7 +3,8 @@
 (require json)
 (require "channel_caucus.rkt")
 
-(define test-input "example_test.json")
+(define TEST-INPUT "example_test.json")
+(define TEST-OUTPUT "channel_output.json")
 
 (define test (read-json (open-input-file test-input)))
 
