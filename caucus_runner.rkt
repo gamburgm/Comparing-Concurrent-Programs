@@ -26,4 +26,5 @@
                  OUTPUT-FILE
                  create-candidate
                  create-voter
-                 spawn-manager)
+                 spawn-manager
+                 spawn-test-output-collector)

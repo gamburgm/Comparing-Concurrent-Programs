@@ -6,8 +6,6 @@
 (define TEST-INPUT "example_test.json")
 (define TEST-OUTPUT "channel_output.json")
 
-(define test (read-json (open-input-file test-input)))
-
 (define main-channel (make-channel))
 (define-values (candidate-registration candidate-roll) (make-abstract-registry))
 (define-values (collect-rounds-chan collect-election-chan) (make-json-output-collector main-channel "channel.json"))

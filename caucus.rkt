@@ -221,12 +221,10 @@
        candidates)))
 
 ;; -> Manager
-(define (spawn-manager regions output-file)
+(define (spawn-manager regions)
   (spawn
     (field [caucus-results (hash)])
-    (on-start
-      (spawn-test-output-collector output-file)
-      (for ([region regions]) (spawn-leader region)))
+    (on-start (for ([region regions]) (spawn-leader region)))
 
     (on (asserted (elected $name $region))
         (caucus-results (hash-update (caucus-results) name add1 0))
