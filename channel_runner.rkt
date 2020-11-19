@@ -8,27 +8,37 @@
 
 (define main-channel (make-channel))
 (define-values (candidate-registration candidate-roll) (make-abstract-registry))
-(define-values (collect-rounds-chan collect-election-chan) (make-json-output-collector main-channel "channel.json"))
+(define-values (output-file-chan collect-rounds-chan collect-election-chan) (make-json-output-collector main-channel))
 
-(for ([candidate (in-list (hash-ref test 'candidates))])
-  (make-candidate (hash-ref candidate 'name)
-                  (hash-ref candidate 'tax_rate)
-                  (hash-ref candidate 'threshold)
+(define voter-registration-chans (hash))
+(define voter-rolls '())
+
+(define (create-candidate jscand)
+  (make-candidate (hash-ref jscand 'name)
+                  (hash-ref jscand 'tax_rate)
+                  (hash-ref jscand 'threshold)
                   candidate-registration))
 
-(define voter-rolls
-  (for/fold ([voter-rolls '()])
-            ([region (in-list (hash-ref test 'regions))])
+(define (create-voter jsvoter region)
+  ;; this kinda sucks, but the only solution is to wrap this whole thing in some sort of loop...?
+  (unless (hash-has-key? voter-registration-chans region)
     (define-values (voter-registration voter-roll) (make-abstract-registry))
-    (define region-name (hash-ref region 'name))
-    (for ([voter (in-list (hash-ref region 'voters))])
-      (make-voter (hash-ref voter 'name)
-                  region-name
-                  (stupid-sort (hash-ref (hash-ref voter 'voting_method) 'candidate))
-                  voter-registration
-                  candidate-roll))
-    (cons voter-roll voter-rolls)))
+    (set! voter-rolls (cons voter-roll voter-rolls))
+    (set! voter-registration-chans (hash-set voter-registration-chans region voter-registration)))
 
-(make-region-manager (map (λ (region) (hash-ref region 'name)) (hash-ref test 'regions)) candidate-roll voter-rolls collect-rounds-chan collect-election-chan)
+  (make-voter (hash-ref voter 'name)
+              region-name
+              (stupid-sort (hash-ref (hash-ref voter 'voting_method) 'candidate))
+              (hash-ref voter-registration-chans region)
+              candidate-roll))
+
+(define (create-manager regions)
+  (make-region-manager regions
+                       candidate-roll
+                       voter-rolls
+                       collect-rounds-can collect-election-chan))
+
+(define (create-test-collector output-file)
+  (channel-put 
 
 (define run-completed (channel-get main-channel))

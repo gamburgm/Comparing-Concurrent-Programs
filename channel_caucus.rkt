@@ -374,14 +374,16 @@
               (printf "We have our winner! ~a\n" front-runner)]
              [else (loop new-results)])])))))
 
-(define (make-json-output-collector main-chan output-file-name)
+(define (make-json-output-collector main-chan)
+  (define output-file-chan (make-channel))
   (define round-info-chan (make-channel))
   (define election-chan (make-channel))
 
   (thread
     (thunk
       (let loop ([round-results (hash)]
-                 [region-winners (hash)])
+                 [region-winners (hash)]
+                 [output-file ""]) ;; NOTE potential race if election ends before filename received
         (sync
           (handle-evt
             round-info-chan
@@ -399,10 +401,15 @@
             election-chan
             (match-lambda
               [(declare-election-winner winner)
-               (write-results-to-file round-results region-winners winner output-file-name)
-               (channel-put main-chan (end-signal))]))))))
+               (write-results-to-file round-results region-winners winner output-file)
+               (channel-put main-chan (end-signal))]))
+          (handle-evt
+            output-file-chan
+            (match-lambda
+              [(output-file-container name)
+               (loop round-results region-winners name)]))))))
 
-  (values round-info-chan election-chan))
+  (values output-file-chan round-info-chan election-chan))
 
 ;; A subscriber used to print information for testing
 (define (make-dummy-subscriber pub-sub-chan)
