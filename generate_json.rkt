@@ -2,7 +2,7 @@
 
 (require [only-in json write-json])
 
-(provide round-info round-loser round-winner write-results-to-file)
+(provide round-info round-loser round-winner record-json-output results->jsexpr write-results-to-file)
 
 ;; a Name is a String
 
@@ -17,13 +17,17 @@
 
 ;; Record the jsexpr representation of the results of the election to a file
 ;; [Hash-of Region RoundInfo] [Hash-of Region Name] Name String -> void
-(define (write-results-to-file round-results region-winners winner filename)
+(define (record-json-output round-results region-winners winner filename)
   (define election-results (results->jsexpr round-results region-winners winner))
+  (write-results-to-file election-results filename))
 
+;; jsexpr string -> void
+(define (write-results-to-file results filename)
   (with-output-to-file
     filename
-    (λ () (write-json election-results))
+    (λ () (write-json results))
     #:exists 'replace))
+
 
 ;; Generate a jsexpr that models the results of the election
 ;; [Hash-of Region RoundInfo] [Hash-of Region Name] Name -> jsexpr

@@ -258,4 +258,4 @@
                        '())))
 
     (on (asserted (winner $name))
-        (write-results-to-file (round-results) (region-winners) name output-file-name))))
+        (record-json-output (round-results) (region-winners) name output-file-name))))

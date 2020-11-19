@@ -2,13 +2,15 @@
 
 (require json)
 (require "channel_caucus.rkt")
+(require "test_runner.rkt")
+(require "generate_json.rkt")
 
 (define TEST-INPUT "example_test.json")
 (define TEST-OUTPUT "channel_output.json")
 
 (define main-channel (make-channel))
 (define-values (candidate-registration candidate-roll) (make-abstract-registry))
-(define-values (output-file-chan collect-rounds-chan collect-election-chan) (make-json-output-collector main-channel))
+(define-values (collect-rounds-chan collect-election-chan) (make-json-output-collector main-channel))
 
 (define voter-registration-chans (hash))
 (define voter-rolls '())
@@ -19,26 +21,33 @@
                   (hash-ref jscand 'threshold)
                   candidate-registration))
 
-(define (create-voter jsvoter region)
+(define (create-voter jsvoter region-name)
   ;; this kinda sucks, but the only solution is to wrap this whole thing in some sort of loop...?
-  (unless (hash-has-key? voter-registration-chans region)
+  (unless (hash-has-key? voter-registration-chans region-name)
     (define-values (voter-registration voter-roll) (make-abstract-registry))
     (set! voter-rolls (cons voter-roll voter-rolls))
-    (set! voter-registration-chans (hash-set voter-registration-chans region voter-registration)))
+    (set! voter-registration-chans (hash-set voter-registration-chans region-name voter-registration)))
 
-  (make-voter (hash-ref voter 'name)
+  (make-voter (hash-ref jsvoter 'name)
               region-name
-              (stupid-sort (hash-ref (hash-ref voter 'voting_method) 'candidate))
-              (hash-ref voter-registration-chans region)
+              (stupid-sort (hash-ref (hash-ref jsvoter 'voting_method) 'candidate))
+              (hash-ref voter-registration-chans region-name)
               candidate-roll))
 
-(define (create-manager regions)
-  (make-region-manager regions
+(define (create-manager region-names)
+  (make-region-manager region-names
                        candidate-roll
                        voter-rolls
-                       collect-rounds-can collect-election-chan))
+                       collect-rounds-chan
+                       collect-election-chan))
 
 (define (create-test-collector output-file)
-  (channel-put 
+  (define test-output (channel-get main-channel))
+  (write-results-to-file test-output output-file))
 
-(define run-completed (channel-get main-channel))
+(initialize-test TEST-INPUT
+                 TEST-OUTPUT
+                 create-candidate
+                 create-voter
+                 create-manager
+                 create-test-collector)
