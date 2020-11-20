@@ -1,7 +1,10 @@
 input_file = '../example_test.json'
+output_file = '../elixir_output.json'
 
 {:ok, json_text} = File.read(input_file)
 test_input = Poison.decode!(json_text)
+
+test_collector = OutputCollector.create(output_file)
 
 cand_registry = AbstractRegistry.create(CandStruct)
 
@@ -17,9 +20,9 @@ Enum.each(test_input["regions"], fn %{"name" => region_name, "voters" => voters}
   end)
 end)
 
-region_manager = RegionManager.spawn(Enum.map(test_input["regions"], fn %{"name" => n} -> String.to_atom(n) end), cand_registry)
+RegionManager.spawn(Enum.map(test_input["regions"], fn %{"name" => n} -> String.to_atom(n) end), cand_registry, test_collector)
 
-ref = Process.monitor(region_manager)
+ref = Process.monitor(test_collector)
 
 receive do
   {:DOWN, ^ref, _, _, _} -> :ok

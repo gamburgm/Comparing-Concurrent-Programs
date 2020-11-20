@@ -185,24 +185,24 @@ defmodule VoteLeader do
   defstruct [:pid]
   # initialize the VoteLeader
   # Region PID PID -> PID
-  def spawn(region, candidate_registry, region_manager) do
+  def spawn(region, candidate_registry, region_manager, test_collector) do
     spawn fn -> 
       Process.sleep(1000)
       send Process.whereis(region), {:msg, self()}
-      setup_voting(MapSet.new(), MapSet.new(), candidate_registry, region_manager)
+      setup_voting(region, MapSet.new(), MapSet.new(), candidate_registry, region_manager, test_collector)
     end
   end
 
   # Query for any prerequisite data for running a round of voting
   # [Setof Voter] PID -> void
-  defp setup_voting(voters, blacklist, candidate_registry, region_manager) do
+  defp setup_voting(region, voters, blacklist, candidate_registry, region_manager, test_collector) do
     send candidate_registry, {:msg, self()}
-    prepare_voting(voters, MapSet.new(), blacklist, candidate_registry, region_manager)
+    prepare_voting(region, voters, MapSet.new(), blacklist, candidate_registry, region_manager, test_collector)
   end
 
   # Gather the information necessary to start voting and issue votes to voters
   # [Setof Voter] [Setof Candidate] PID -> void
-  defp prepare_voting(voters, candidates, blacklist, candidate_registry, region_manager) do
+  defp prepare_voting(region, voters, candidates, blacklist, candidate_registry, region_manager, test_collector) do
     if !(Enum.empty?(voters) || Enum.empty?(candidates)) do
       valid_candidates = MapSet.difference(candidates, blacklist)
       issue_votes(voters, valid_candidates)
@@ -210,6 +210,7 @@ defmodule VoteLeader do
       Process.send_after self(), :timeout, 1000
 
       vote_loop(
+        region,
         %VoterData{voters: voters, lookup: voter_lookup, votes: %{}},
         %CandData{
           cands: valid_candidates, 
@@ -217,16 +218,17 @@ defmodule VoteLeader do
           blacklist: blacklist, 
         },
         candidate_registry,
-        region_manager
+        region_manager,
+        test_collector
       )
     else
       receive do
         %AbstractRegistry{values: new_voters, type: VoterStruct} ->
           IO.puts "Vote leader received voters! #{inspect new_voters}"
-          prepare_voting(new_voters, candidates, blacklist, candidate_registry, region_manager)
+          prepare_voting(region, new_voters, candidates, blacklist, candidate_registry, region_manager, test_collector)
         %AbstractRegistry{values: new_candidates, type: CandStruct} ->
           IO.puts "Vote Leader received candidates! #{inspect new_candidates}"
-          prepare_voting(voters, new_candidates, blacklist, candidate_registry, region_manager)
+          prepare_voting(region, voters, new_candidates, blacklist, candidate_registry, region_manager, test_collector)
       end
     end
   end
@@ -240,23 +242,24 @@ defmodule VoteLeader do
 
   # Receive votes from voters and elect a winner if possible
   # VoterData CandData PID PID -> void
-  defp vote_loop(voter_data, cand_data, cand_registry, region_manager) do
+  defp vote_loop(region, voter_data, cand_data, cand_registry, region_manager, test_collector) do
     if MapSet.size(voter_data.voters) == Kernel.map_size(voter_data.votes) do
-      conclude_vote(voter_data, cand_data, cand_registry, region_manager)
+      conclude_vote(region, voter_data, cand_data, cand_registry, region_manager, test_collector)
     else
       receive do
         :timeout ->
-          conclude_vote(voter_data, cand_data, cand_registry, region_manager)
+          conclude_vote(region, voter_data, cand_data, cand_registry, region_manager, test_collector)
         {:vote, voter_name, cand_name} -> 
           cond do
             # CASE 1: Already eliminated Voter
             !Map.has_key?(voter_data.lookup, voter_name) ->
-              vote_loop(voter_data, cand_data, cand_registry, region_manager)
+              vote_loop(region, voter_data, cand_data, cand_registry, region_manager, test_collector)
             # CASE 2: Stubborn Voter || CASE 3: Greedy Voter
             !Map.has_key?(cand_data.lookup, cand_name) || Map.has_key?(voter_data.votes, voter_name) ->
               IO.puts "Voter #{inspect voter_name} has been caught trying to vote for a dropped candidate!"
 
               vote_loop(
+                region,
                 %VoterData{
                   voters: MapSet.delete(voter_data.voters, voter_data.lookup[voter_name]),
                   lookup: Map.delete(voter_data.lookup, voter_name),
@@ -264,7 +267,8 @@ defmodule VoteLeader do
                 },
                 cand_data,
                 cand_registry,
-                region_manager
+                region_manager,
+                test_collector
               )
             # CASE 4: Voter checks out
             true ->
@@ -272,10 +276,12 @@ defmodule VoteLeader do
               new_voting_record = Map.put(voter_data.votes, voter_name, cand_name)
 
               vote_loop(
+                region,
                 %{voter_data | votes: new_voting_record},
                 cand_data,
                 cand_registry, 
-                region_manager
+                region_manager,
+                test_collector
               )
           end
       end
@@ -285,16 +291,24 @@ defmodule VoteLeader do
 
   # Determine a winner, or if there isn't one, remove a loser and start next voting loop
   # VoterData CandData PID PID -> void
-  defp conclude_vote(voter_data, cand_data, cand_registry, region_manager) do
+  defp conclude_vote(region, voter_data, cand_data, cand_registry, region_manager, test_collector) do
     initial_tally = Enum.reduce(cand_data.cands, %{}, fn %CandStruct{name: cand_name, tax_rate: _, pid: _}, init -> Map.put(init, cand_name, 0) end)
     tally = Enum.reduce(voter_data.votes, initial_tally, fn {_, cand_name}, curr_tally -> Map.update!(curr_tally, cand_name, &(&1 + 1)) end)
 
     confirmed_voters = Enum.reduce(voter_data.votes, MapSet.new, fn {voter_name, _}, acc -> MapSet.put(acc, voter_data.lookup[voter_name]) end)
     num_votes = Enum.reduce(tally, 0, fn {_, count}, acc -> acc + count end)
+
+    original_voters = Enum.map(voter_data.voters, fn %VoterStruct{name: n, pid: _} -> n end)
+    original_cands  = Enum.map(cand_data.cands, fn %CandStruct{name: n, tax_rate: _, pid: _} -> n end)
+
+
     {frontrunner, their_votes} = Enum.max(tally, fn {_, count1}, {_, count2} -> count1 >= count2 end)
     IO.puts "The frontrunner received #{their_votes} votes, out of #{num_votes} total votes"
     if their_votes > (num_votes / 2) do
-      send region_manager, {:caucus_winner, frontrunner}
+      winner_info = {:caucus_winner, region, frontrunner}
+      send region_manager, winner_info
+      send test_collector, winner_info
+      send test_collector, {:round_info, original_voters, original_cands, tally, {:round_winner, frontrunner}}
     else
       {loser, _} = Enum.min(tally, fn {_, count1}, {_, count2} -> count1 <= count2 end)
       Enum.each(cand_data.cands, fn %CandStruct{name: _, tax_rate: _, pid: pid} -> send pid, {:tally, tally} end)
@@ -302,27 +316,29 @@ defmodule VoteLeader do
       send losing_pid, :loser
       IO.puts "Our loser is #{loser}!"
 
-      setup_voting(confirmed_voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, region_manager)
+      send test_collector, {:round_info, original_voters, original_cands, tally, {:round_loser, loser}}
+
+      setup_voting(region, confirmed_voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, region_manager, test_collector)
     end
   end
 end
 
 # Aggregates the results of many caucuses to determine a winner for a region
 defmodule RegionManager do
-  def spawn(regions, candidate_registry) do
+  def spawn(regions, candidate_registry, test_collector) do
     spawn fn ->
-      initialize_regions(regions, candidate_registry)
-      determine_winner(regions, %{})
+      initialize_regions(regions, candidate_registry, test_collector)
+      determine_winner(regions, %{}, test_collector)
     end
   end
 
-  def initialize_regions(regions, candidate_registry) do
+  def initialize_regions(regions, candidate_registry, test_collector) do
     for region <- regions do
-      VoteLeader.spawn(region, candidate_registry, self())
+      VoteLeader.spawn(region, candidate_registry, self(), test_collector)
     end
   end
 
-  def determine_winner(regions, results) do
+  def determine_winner(regions, results, test_collector) do
     receive do
       {:caucus_winner, _region, cand_name} ->
         new_results = Map.update(results, cand_name, 1, &(&1 + 1))
@@ -331,16 +347,17 @@ defmodule RegionManager do
         if length(regions) == total_results do
           {victor_name, _} = Enum.max(new_results, fn {_, count1}, {_, count2} -> count1 >= count2 end)
           IO.puts "The winner of the region is: #{inspect victor_name}!"
+          send test_collector, {:declare_winner, victor_name}
         else
-          determine_winner(regions, new_results)
+          determine_winner(regions, new_results, test_collector)
         end
     end
   end
 end
 
 defmodule OutputCollector do
-  def spawn(filename) do
-    spawn fn -> loop(%{}, filename) end
+  def create(filename) do
+    spawn fn -> loop(%{}, %{}, filename) end
   end
 
   def loop(round_results, region_winners, filename) do
@@ -348,7 +365,7 @@ defmodule OutputCollector do
       {:round_info, region, _, _, _, _} = v -> 
         loop(
           Map.update(round_results, region, [v], &([v|&1])),
-          region_wiiners,
+          region_winners,
           filename
         )
       {:caucus_winner, region, winner} ->

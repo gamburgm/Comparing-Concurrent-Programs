@@ -12,18 +12,18 @@ defmodule GenerateJSON do
       end)
     }
 
-    File.write(filename, Poison.encode(test_output))
+    File.write(filename, Poison.encode!(test_output))
   end
 
   def generate_region_results(region_name, round_results, region_winner) do
     %{
       "name" => region_name,
       "winner" => region_winner,
-      "rounds" => Enum.map(round_results, self.generate_round_result)
+      "rounds" => Enum.map(round_results, fn res -> generate_round_result(res) end)
     }
   end
 
-  def generate_round_result(%{:round_info, _region, voters, cands, tally, outcome}) do
+  def generate_round_result({:round_info, _region, voters, cands, tally, outcome}) do
     %{
       "active_voters" => voters,
       "active_cands" => cands,
