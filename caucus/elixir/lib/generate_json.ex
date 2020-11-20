@@ -5,7 +5,6 @@
 defmodule GenerateJSON do
   # [Hash-of Region [List-of Round-Info]] [Hash-of Region Name] Name String -> void
   def record_results(round_results, region_winners, winner, filename) do
-    IO.puts "hallelujah"
     test_output = %{
       "winner" => winner,
       "regions" => Enum.map(round_results, fn {region, results} ->
@@ -14,7 +13,6 @@ defmodule GenerateJSON do
     }
 
     File.write(filename, Poison.encode!(test_output))
-    IO.puts "banana phone"
   end
 
   def generate_region_results(region_name, round_results, region_winner) do

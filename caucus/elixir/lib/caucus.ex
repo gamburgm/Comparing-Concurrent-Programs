@@ -376,11 +376,8 @@ defmodule OutputCollector do
           filename
         )
       {:declare_winner, winner} ->
-        IO.puts "helo world"
         correctly_ordered_results = Enum.reduce(round_results, %{}, fn {region, results}, acc -> Map.put(acc, region, Enum.reverse(results)) end)
-        IO.puts "2"
         GenerateJSON.record_results(correctly_ordered_results, region_winners, winner, filename)
-        IO.puts "WOWOWOWOWOW"
     end
   end
 end
