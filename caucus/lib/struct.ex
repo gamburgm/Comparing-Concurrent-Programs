@@ -13,7 +13,7 @@
 # a Vote is a {:vote, Name, Name}
 # a VoteLeader is a %VoteLeader{pid: PID}
 # a Tally is a {:tally, [Mapof Name -> Number]}
-# a CaucusWinner is a {:caucus_winner, Name}
+# a CaucusWinner is a {:caucus_winner, Region, Name}
 # a Loser is a :loser
 # an AbstractRegistry response is a %AbstractRegistry{values: [Setof X], type: X}
 #

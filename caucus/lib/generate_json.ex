@@ -1,4 +1,4 @@
-# a RoundInfo is a {:round_info, [List-of Name], [List-of Name], [Hash-of Name Number], (U RoundLoser RoundWinner)}
+# a RoundInfo is a {:round_info, Region, [List-of Name], [List-of Name], [Hash-of Name Number], (U RoundLoser RoundWinner)}
 # a RoundLoser is a {:round_loser, Name}
 # a RoundWinner is a {:round_winner, Name}
 
@@ -23,7 +23,7 @@ defmodule GenerateJSON do
     }
   end
 
-  def generate_round_result(%{:round_info, voters, cands, tally, outcome}) do
+  def generate_round_result(%{:round_info, _region, voters, cands, tally, outcome}) do
     %{
       "active_voters" => voters,
       "active_cands" => cands,

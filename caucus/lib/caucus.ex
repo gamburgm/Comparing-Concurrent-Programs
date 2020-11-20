@@ -312,7 +312,7 @@ defmodule RegionManager do
   def spawn(regions, candidate_registry) do
     spawn fn ->
       initialize_regions(regions, candidate_registry)
-      determine_region(regions, %{})
+      determine_winner(regions, %{})
     end
   end
 
@@ -322,9 +322,9 @@ defmodule RegionManager do
     end
   end
 
-  def determine_region(regions, results) do
+  def determine_winner(regions, results) do
     receive do
-      {:caucus_winner, cand_name} ->
+      {:caucus_winner, _region, cand_name} ->
         new_results = Map.update(results, cand_name, 1, &(&1 + 1))
         total_results = Enum.reduce(new_results, 0, fn {_, count}, acc -> acc + count end)
 
@@ -332,8 +332,33 @@ defmodule RegionManager do
           {victor_name, _} = Enum.max(new_results, fn {_, count1}, {_, count2} -> count1 >= count2 end)
           IO.puts "The winner of the region is: #{inspect victor_name}!"
         else
-          determine_region(regions, new_results)
+          determine_winner(regions, new_results)
         end
+    end
+  end
+end
+
+defmodule OutputCollector do
+  def spawn(filename) do
+    spawn fn -> loop(%{}, filename) end
+  end
+
+  def loop(round_results, region_winners, filename) do
+    receive do
+      {:round_info, region, _, _, _, _} = v -> 
+        loop(
+          Map.update(round_results, region, [v], &([v|&1])),
+          region_wiiners,
+          filename
+        )
+      {:caucus_winner, region, winner} ->
+        loop(
+          round_results,
+          Map.put(region_winners, region, winner),
+          filename
+        )
+      {:declare_winner, winner} ->
+        GenerateJSON.record_results(round_results, region_winners, winner, filename)
     end
   end
 end
