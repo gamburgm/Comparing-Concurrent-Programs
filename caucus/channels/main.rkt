@@ -1,5 +1,5 @@
 #lang racket
-(require "channel_caucus.rkt")
+(require "caucus.rkt")
 
 ;;;;;;;;;;;; EXECUTION ;;;;;;;;;;;;
 (define main-channel (make-channel))

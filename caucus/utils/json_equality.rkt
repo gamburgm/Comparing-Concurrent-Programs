@@ -31,5 +31,8 @@
     #t
     (blow v1 v2)))
 
-(compare (read-json (open-input-file "example_result.json"))
-         (read-json (open-input-file "channel_output.json")))
+(define-values (first-file second-file)
+  (command-line #:args (f s) (values f s)))
+
+(compare (read-json (open-input-file first-file))
+         (read-json (open-input-file second-file)))

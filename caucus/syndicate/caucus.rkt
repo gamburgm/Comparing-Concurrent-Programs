@@ -3,8 +3,8 @@
 (require [only-in racket argmax argmin identity first filter-not])
 (require [only-in racket/function curry])
 (require syndicate/drivers/timestate)
-(require "caucus_struct.rkt")
-(require "generate_json.rkt")
+(require "../generate_json.rkt")
+(require "struct.rkt")
 
 (provide spawn-candidate spawn-stubborn-candidate spawn-voter spawn-greedy-voter spawn-stubborn-voter
          spawn-leaving-voter spawn-late-joining-voter spawn-not-registered-voter spawn-sleepy-voter

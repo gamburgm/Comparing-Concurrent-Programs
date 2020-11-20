@@ -3,13 +3,14 @@
 ;; NOTE types are defined in `test_harness.md`
 
 (require json)
+(require [only-in racket/cmdline command-line])
 (require "caucus.rkt")
-(require "test_runner.rkt")
+(require "../test_runner.rkt")
 
 (require/activate syndicate/drivers/timestate)
 
-(define INPUT-FILE "example_test.json")
-(define OUTPUT-FILE "syndicate_output.json")
+(define INPUT-FILE "../example_test.json")
+(define OUTPUT-FILE "../syndicate_output.json")
 
 (define (create-candidate jscand)
   (spawn-candidate (hash-ref jscand 'name)
@@ -22,8 +23,11 @@
                (stupid-sort (hash-ref (hash-ref jsvoter 'voting_method)
                                       'candidate))))
 
-(initialize-test INPUT-FILE
-                 OUTPUT-FILE
+(define-values (input-file output-file)
+  (command-line #:args (i o) (values i o)))
+
+(initialize-test input-file
+                 output-file
                  create-candidate
                  create-voter
                  spawn-manager

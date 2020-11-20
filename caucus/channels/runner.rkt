@@ -1,12 +1,9 @@
 #lang racket
 
 (require json)
-(require "channel_caucus.rkt")
-(require "test_runner.rkt")
-(require "generate_json.rkt")
-
-(define TEST-INPUT "example_test.json")
-(define TEST-OUTPUT "channel_output.json")
+(require "caucus.rkt")
+(require "../test_runner.rkt")
+(require "../generate_json.rkt")
 
 (define main-channel (make-channel))
 (define-values (candidate-registration candidate-roll) (make-abstract-registry))
@@ -45,8 +42,11 @@
   (define test-output (channel-get main-channel))
   (write-results-to-file test-output output-file))
 
-(initialize-test TEST-INPUT
-                 TEST-OUTPUT
+(define-values (test-input test-ouptut)
+  (command-line #:args (i o) (values i o)))
+
+(initialize-test test-input
+                 test-ouptut
                  create-candidate
                  create-voter
                  create-manager
