@@ -16,7 +16,7 @@
 (struct round-winner (name) #:transparent)
 
 ;; Record the jsexpr representation of the results of the election to a file
-;; [Hash-of Region RoundInfo] [Hash-of Region Name] Name String -> void
+;; [Hash-of Region [List-of RoundInfo]] [Hash-of Region Name] Name String -> void
 (define (record-json-output round-results region-winners winner filename)
   (define election-results (results->jsexpr round-results region-winners winner))
   (write-results-to-file election-results filename))
@@ -28,9 +28,8 @@
     (λ () (write-json results))
     #:exists 'replace))
 
-
 ;; Generate a jsexpr that models the results of the election
-;; [Hash-of Region RoundInfo] [Hash-of Region Name] Name -> jsexpr
+;; [Hash-of Region [List-of RoundInfo]] [Hash-of Region Name] Name -> jsexpr
 (define (results->jsexpr round-results region-winners winner)
   (define round-json-output
     ;; ASSUME every region with corresponding RoundInfo has elected a winner
