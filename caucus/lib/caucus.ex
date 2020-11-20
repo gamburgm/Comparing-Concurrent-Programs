@@ -308,7 +308,7 @@ defmodule VoteLeader do
       winner_info = {:caucus_winner, region, frontrunner}
       send region_manager, winner_info
       send test_collector, winner_info
-      send test_collector, {:round_info, original_voters, original_cands, tally, {:round_winner, frontrunner}}
+      send test_collector, {:round_info, region, original_voters, original_cands, tally, {:round_winner, frontrunner}}
     else
       {loser, _} = Enum.min(tally, fn {_, count1}, {_, count2} -> count1 <= count2 end)
       Enum.each(cand_data.cands, fn %CandStruct{name: _, tax_rate: _, pid: pid} -> send pid, {:tally, tally} end)
@@ -316,7 +316,7 @@ defmodule VoteLeader do
       send losing_pid, :loser
       IO.puts "Our loser is #{loser}!"
 
-      send test_collector, {:round_info, original_voters, original_cands, tally, {:round_loser, loser}}
+      send test_collector, {:round_info, region, original_voters, original_cands, tally, {:round_loser, loser}}
 
       setup_voting(region, confirmed_voters, MapSet.put(cand_data.blacklist, cand_data.lookup[loser]), cand_registry, region_manager, test_collector)
     end
@@ -360,6 +360,7 @@ defmodule OutputCollector do
     spawn fn -> loop(%{}, %{}, filename) end
   end
 
+  # NOTE round_results values are in reverse order
   def loop(round_results, region_winners, filename) do
     receive do
       {:round_info, region, _, _, _, _} = v -> 
@@ -375,7 +376,8 @@ defmodule OutputCollector do
           filename
         )
       {:declare_winner, winner} ->
-        GenerateJSON.record_results(round_results, region_winners, winner, filename)
+        correctly_ordered_results = Enum.reduce(round_results, %{}, fn {region, results}, acc -> Map.put(acc, region, Enum.reverse(results)) end)
+        GenerateJSON.record_results(correctly_ordered_results, region_winners, winner, filename)
     end
   end
 end
