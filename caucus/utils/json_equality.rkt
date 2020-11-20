@@ -31,8 +31,7 @@
     #t
     (blow v1 v2)))
 
-(define-values (first-file second-file)
-  (command-line #:args (f s) (values f s)))
-
-(compare (read-json (open-input-file first-file))
-         (read-json (open-input-file second-file)))
+(command-line
+  #:args (first-file second-file)
+  (equal? (read-json (open-input-file first-file))
+          (read-json (open-input-file second-file))))
