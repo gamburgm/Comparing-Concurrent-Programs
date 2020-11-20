@@ -258,4 +258,7 @@
                        '())))
 
     (on (asserted (winner $name))
-        (record-json-output (round-results) (region-winners) name output-file-name))))
+        (define correctly-ordered-results
+          (for/hash ([(region results) (in-hash (round-results))])
+            (values region (reverse results))))
+        (record-json-output correctly-ordered-results (region-winners) name output-file-name))))

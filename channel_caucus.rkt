@@ -399,7 +399,10 @@
             election-chan
             (match-lambda
               [(declare-election-winner winner)
-               (channel-put main-chan (results->jsexpr round-results region-winners winner))]))))))
+               (define correctly-ordered-results
+                 (for/hash ([(region results) (in-hash round-results)])
+                   (values region (reverse results))))
+               (channel-put main-chan (results->jsexpr correctly-ordered-results region-winners winner))]))))))
 
   (values round-info-chan election-chan))
 

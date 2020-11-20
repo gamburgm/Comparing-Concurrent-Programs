@@ -32,4 +32,4 @@
     (blow v1 v2)))
 
 (compare (read-json (open-input-file "example_result.json"))
-         (read-json (open-input-file "elixir_output.json")))
+         (read-json (open-input-file "channel_output.json")))

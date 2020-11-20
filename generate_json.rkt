@@ -34,7 +34,7 @@
   (define round-json-output
     ;; ASSUME every region with corresponding RoundInfo has elected a winner
     (for/list ([(region rounds) (in-hash round-results)])
-      (region->jsexpr region (reverse rounds) (hash-ref region-winners region))))
+      (region->jsexpr region rounds (hash-ref region-winners region))))
 
   (hash 'regions round-json-output
         'winner winner))
