@@ -3,26 +3,26 @@
 *.jpeg
 
 # The directory Mix will write compiled artifacts to.
-caucus/_build/
+caucus/elixir/_build/
 
 # If you run "mix test --cover", coverage assets end up here.
-caucus/cover/
+caucus/elixir/cover/
 
 # The directory Mix downloads your dependencies sources to.
-caucus/deps/
+caucus/elixir/deps/
 
 # Where third-party dependencies like ExDoc output generated docs.
-caucus/doc/
+caucus/elixir/doc/
 
 # Ignore .fetch files in case you like to edit your project deps locally.
-caucus/.fetch
+caucus/elixir/.fetch
 
 # If the VM crashes, it generates a dump, let's ignore it too.
-caucus/erl_crash.dump
+caucus/elixir/erl_crash.dump
 
 # Also ignore archive artifacts (built via "mix archive.build").
-caucus/*.ez
+caucus/elixir/*.ez
 
 # Ignore package tarball (built via "mix hex.build").
-caucus/caucus-*.tar
+caucus/elixir/caucus-*.tar
 
