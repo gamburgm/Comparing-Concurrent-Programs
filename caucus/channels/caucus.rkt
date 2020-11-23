@@ -1,6 +1,6 @@
 #lang racket
 (require racket/set)
-(require "channel_struct.rkt")
+(require "struct.rkt")
 
 (provide make-abstract-registry make-candidate make-stubborn-candidate make-voter make-greedy-voter make-stubborn-voter make-sleepy-voter make-voter-registry make-vote-leader make-event-registry make-region-manager stupid-sort)
 
