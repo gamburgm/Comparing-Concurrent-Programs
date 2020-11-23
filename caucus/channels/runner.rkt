@@ -42,12 +42,10 @@
   (define test-output (channel-get main-channel))
   (write-results-to-file test-output output-file))
 
-(define-values (test-input test-ouptut)
-  (command-line #:args (i o) (values i o)))
-
-(initialize-test test-input
-                 test-ouptut
-                 create-candidate
-                 create-voter
-                 create-manager
-                 create-test-collector)
+(command-line #:args (test-input test-output)
+  (initialize-test test-input
+                   test-output 
+                   create-candidate
+                   create-voter
+                   create-manager
+                   create-test-collector))

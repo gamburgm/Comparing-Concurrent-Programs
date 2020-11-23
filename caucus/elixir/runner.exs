@@ -1,5 +1,4 @@
-input_file = '../example_test.json'
-output_file = '../elixir_output.json'
+[input_file, output_file] = System.argv()
 
 {:ok, json_text} = File.read(input_file)
 test_input = Poison.decode!(json_text)

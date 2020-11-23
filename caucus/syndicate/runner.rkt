@@ -23,12 +23,10 @@
                (stupid-sort (hash-ref (hash-ref jsvoter 'voting_method)
                                       'candidate))))
 
-(define-values (input-file output-file)
-  (command-line #:args (i o) (values i o)))
-
-(initialize-test input-file
-                 output-file
-                 create-candidate
-                 create-voter
-                 spawn-manager
-                 spawn-test-output-collector)
+(command-line #:args (input-file output-file)
+  (initialize-test input-file
+                   output-file
+                   create-candidate
+                   create-voter
+                   spawn-manager
+                   spawn-test-output-collector))
