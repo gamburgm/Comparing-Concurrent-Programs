@@ -4,15 +4,6 @@
 (require plot/no-gui)
 (require "parse_diff.rkt")
 
-;; FIXME get the max lengths of all three files and use that for the y-axis
-;; TODO
-;; How should the CLI work?
-;; 1. you should specify the label as a command-line argument
-;; 2. you should specify old and new
-;; 3. line numbers should be collected from here and the math calculated
-;; 4. calculate the diff from the racket stuff
-;; 5. spit out some numbers elsewhere
-
 (define (tick-formatter _min _max pre-ticks)
   (for/list ([tick-val pre-ticks])
     (number->string (pre-tick-value tick-val))))
@@ -52,7 +43,5 @@
                  [plot-y-far-ticks no-ticks])
     (plot-file (rectangles change-rectangles) output-file #:title graph-title #:x-label "Line of code" #:y-label "Number of lines inserted" #:x-min 1 #:x-max x-max #:y-max y-max)))
 
-(define-values (lang new-file)
-  (command-line #:args (lang new-file) (values lang new-file)))
-
-(plot-changes lang "input.txt" new-file 650 100)
+(command-line #:args (lang new-file)
+  (plot-changes lang "input.txt" new-file 650 100))
